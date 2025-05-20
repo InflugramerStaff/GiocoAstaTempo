@@ -129,6 +129,29 @@
             margin-left: auto;
             margin-right: auto;
         }
+        .confirmation-countdown {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 120px;
+            color: #FF0000;
+            z-index: 1000;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            display: none;
+        }
+        
+        .confirmation-message {
+            position: fixed;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #333;
+            text-align: center;
+            z-index: 1000;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -137,10 +160,12 @@
             <h2>Round: <span id="current-round">0</span></h2>
             <p>Gettoni: <span id="tokens-count">0</span></p>
             <p>Tempo rimanente: <span id="remaining-time">10:00</span></p>
+            <p id="game-status">In attesa...</p>  <!-- Aggiungi questa riga -->
         </div>
 
         <div class="bidding-container">
-            <div id="confirmation-countdown" style="display: none;">5</div>
+            <div id="confirmation-message" class="confirmation-message">Conferma della partecipazione al round</div>
+            <div id="confirmation-countdown" class="confirmation-countdown">5</div>
             <div id="bidding-timer" style="display: none;">0.000s</div>
             <button id="bid-button" class="bid-button">TIENI PREMUTO PER PARTECIPARE</button>
             <p id="wait-message"></p>
@@ -269,25 +294,26 @@ connectedRef.on("value", (snap) => {
         bidButton.addEventListener('touchcancel', handleBidEnd);
 
         function handleBidStart(e) {
-            e.preventDefault(); // Previene comportamenti indesiderati
+            e.preventDefault();
             
             if (!gameData || !playerData || playerData.isEliminated || bidButton.disabled) {
                 return;
             }
 
-            // Se non stiamo già confermando, inizia la fase di conferma
             if (!isConfirming && !isConfirmed) {
                 isConfirming = true;
                 confirmationCountdown = confirmationTime;
 
-                // Cambia l'aspetto del pulsante durante la conferma
+                // Mostra il countdown e il messaggio
+                const countdownElement = document.getElementById('confirmation-countdown');
+                const messageElement = document.getElementById('confirmation-message');
+                countdownElement.style.display = 'block';
+                messageElement.style.display = 'block';
+                countdownElement.textContent = confirmationCountdown;
+
+                // Cambia l'aspetto del pulsante
                 bidButton.classList.add('confirming');
                 bidButton.textContent = 'TIENI PREMUTO PER CONFERMARE...';
-
-                // Mostra il countdown
-                const countdownElement = document.getElementById('confirmation-countdown');
-                countdownElement.style.display = 'block';
-                countdownElement.textContent = confirmationCountdown;
 
                 // Avvia il timer di conferma
                 if (confirmationTimer) clearInterval(confirmationTimer);
@@ -296,6 +322,9 @@ connectedRef.on("value", (snap) => {
                     countdownElement.textContent = confirmationCountdown;
 
                     if (confirmationCountdown <= 0) {
+                        // Nascondi countdown e messaggio
+                        countdownElement.style.display = 'none';
+                        messageElement.style.display = 'none';
                         startBidding();
                     }
                 }, 1000);
@@ -353,12 +382,13 @@ connectedRef.on("value", (snap) => {
             clearInterval(confirmationTimer);
             isConfirming = false;
 
+            // Nascondi il countdown e il messaggio
+            document.getElementById('confirmation-countdown').style.display = 'none';
+            document.getElementById('confirmation-message').style.display = 'none';
+
             // Ripristina l'aspetto del pulsante
             bidButton.classList.remove('confirming');
             bidButton.textContent = 'TIENI PREMUTO PER PARTECIPARE';
-
-            // Nascondi il countdown
-            document.getElementById('confirmation-countdown').style.display = 'none';
 
             // Notifica la non partecipazione
             gameRef.child(`rounds/${gameData.currentRound}/participating/${playerId}`).set(false);
@@ -803,26 +833,21 @@ gameStatusRef.on('value', snapshot => {
             
             if (confirm('Sei sicuro di voler abbandonare la partita?')) {
                 // Pulisci lo stato del giocatore nel database
-                if (gameData && playerData) {
-                    gameRef.child(`players/${playerId}`).update({
-                        isEliminated: true
-                    }).then(() => {
-                        // Pulisci il localStorage
-                        localStorage.removeItem('gameId');
-                        localStorage.removeItem('playerId');
-                        localStorage.removeItem('playerName');
-                        
-                        // Reindirizza alla pagina iniziale
-                        window.location.href = 'index.html';
-                    }).catch(error => {
-                        console.error('Errore durante l\'abbandono della partita:', error);
-                        // In caso di errore, reindirizza comunque
-                        window.location.href = 'index.html';
-                    });
-                } else {
-                    // Se non ci sono dati validi, reindirizza direttamente
+                playerRef.update({
+                    isEliminated: true
+                }).then(() => {
+                    // Pulisci il localStorage
+                    localStorage.removeItem('gameId');
+                    localStorage.removeItem('playerId');
+                    localStorage.removeItem('playerName');
+                    localStorage.removeItem('playerType');
+                    
+                    // Reindirizza alla pagina iniziale
                     window.location.href = 'index.html';
-                }
+                }).catch(error => {
+                    console.error('Errore durante l\'abbandono della partita:', error);
+                    alert('Errore durante l\'abbandono della partita. Riprova.');
+                });
             }
         });
     </script>
