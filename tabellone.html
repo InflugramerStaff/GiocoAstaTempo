@@ -120,20 +120,20 @@
         </div>
     </div>
 
-    <!-- Sostituisci la vecchia code-display con questa versione più evidente -->
-<div class="code-display" id="game-id-display" style="
-    font-size: 32px; 
-    color: #007bff; 
-    background-color: #f0f7ff; 
-    border: 2px solid #007bff; 
-    padding: 15px;
-    margin: 20px 0;
-    border-radius: 8px;
-    text-align: center;
-    cursor: pointer;
-    user-select: all;">
-    Codice: ...
-</div>
+    <!-- Sostituisci la vecchia code-display con questa versione statica -->
+    <div class="code-display" id="game-id-display" style="
+        font-size: 32px; 
+        color: #007bff; 
+        background-color: #f0f7ff; 
+        border: 2px solid #007bff; 
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 8px;
+        text-align: center;
+        cursor: pointer;
+        user-select: all;">
+        Codice: <script>document.write(localStorage.getItem('gameId') || '...')</script>
+    </div>
 
     <!-- Configurazione Partita -->
     <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f8f8; border-radius: 8px;">
@@ -283,74 +283,41 @@ const firebaseConfig = {
         if (!gameId) {
             alert('Nessuna partita trovata. Torna alla home.');
             window.location.href = 'index.html';
+            return;
         }
-
-        // Log per debug
-        console.log("ID partita recuperato:", gameId);
-
-        // Mostra il codice partita
-        const codeDisplay = document.getElementById('game-id-display');
-        codeDisplay.textContent = 'Codice: ' + gameId;
-        codeDisplay.setAttribute('data-code', gameId);
 
         // Riferimento alla partita nel database
         const gameRef = database.ref('games/' + gameId);
 
-        // Verifica che la partita esista
-        gameRef.once('value').then(snapshot => {
-            if (!snapshot.exists()) {
-                alert('Partita non trovata nel database.');
+        // Verifica che la partita esista e inizializza il listener
+        gameRef.once('value')
+            .then(snapshot => {
+                if (!snapshot.exists()) {
+                    throw new Error('Partita non trovata nel database.');
+                }
+                console.log("Partita trovata nel database");
+                
+                // Inizializza il listener solo dopo aver verificato che la partita esista
+                initializeGameListener();
+            })
+            .catch(error => {
+                console.error("Errore nella verifica della partita:", error);
+                alert('Errore nel recupero della partita. Torna alla home.');
                 window.location.href = 'index.html';
-                return;
-            }
-            
-            console.log("Partita trovata nel database");
-            // La partita esiste, continua con il resto del codice
-        }).catch(error => {
-            console.error("Errore nella verifica della partita:", error);
-            alert('Errore nel recupero della partita. Torna alla home.');
-            window.location.href = 'index.html';
-        });
+            });
 
-        // Funzione per aggiornare il codice partita
-function updateGameCode() {
-    const gameId = localStorage.getItem('gameId');
-    if (gameId) {
-        console.log("Aggiornamento codice partita:", gameId);
-        const codeDisplay = document.getElementById('game-id-display');
-        codeDisplay.textContent = 'Codice: ' + gameId;
-        codeDisplay.setAttribute('data-code', gameId);
-    }
-}
+        // Funzione per inizializzare il listener della partita
+        function initializeGameListener() {
+            gameRef.on('value', snapshot => {
+                const game = snapshot.val();
+                if (!game) {
+                    alert('Partita non trovata.');
+                    window.location.href = 'index.html';
+                    return;
+                }
 
-// Recupera l'ID partita e mostra subito il codice
-const gameId = localStorage.getItem('gameId');
-if (!gameId) {
-    alert('Nessuna partita trovata. Torna alla home.');
-    window.location.href = 'index.html';
-}
-// Log di debug
-console.log("ID partita recuperato:", gameId);
-
-// Mostra il codice partita subito
-updateGameCode();
-
-// Riferimento alla partita nel database
-const gameRef = database.ref('games/' + gameId);
-
-// Aggiorna il codice partita anche quando cambiano i dati della partita
-gameRef.on('value', snapshot => {
-    const game = snapshot.val();
-    if (!game) {
-        alert('Partita non trovata.');
-        window.location.href = 'index.html';
-        return;
-    }
-    // Aggiorna il codice partita qui
-    updateGameCode();
-
-    // Aggiorna le informazioni di gioco
-    document.getElementById('current-round').textContent = game.currentRound;
+                // Aggiorna le informazioni di gioco
+                document.getElementById('current-round').textContent = game.currentRound;
     
     // Aggiorna lo stato del gioco
     let statusText = 'Sconosciuto';
