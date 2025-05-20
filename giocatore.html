@@ -82,12 +82,25 @@
             color: green;
             font-weight: bold;
         }
+        .leave-button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .leave-button:hover {
+            background-color: #d32f2f;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h2>Round: <span id="current-round">0</span>/19</h2>
         <div>Gettoni: <span id="tokens-count">0</span></div>
+        <button id="leave-game-btn" class="leave-button">Abbandona</button>
     </div>
 
     <div class="player-info">
@@ -522,6 +535,56 @@
             // Ferma qualsiasi offerta in corso
             if (isBidding) {
                 stopBidding();
+            }
+        });
+
+        // Gestione del pulsante "Abbandona"
+        document.getElementById('leave-game-btn').addEventListener('click', function() {
+            if (isBidding) {
+                // Se il giocatore sta facendo un'offerta, fermala
+                stopBidding();
+            }
+            
+            // Chiedi conferma
+            if (confirm('Sei sicuro di voler abbandonare la partita?')) {
+                // Rimuovi il giocatore dalla partita se questa è in attesa
+                gameRef.once('value').then(snapshot => {
+                    const game = snapshot.val();
+                    
+                    // Se la partita è ancora in attesa, rimuovi il giocatore
+                    if (game && game.gameStatus === 'waiting') {
+                        gameRef.child('players/' + playerId).remove()
+                            .then(() => {
+                                console.log('Giocatore rimosso dalla partita');
+                            })
+                            .catch(error => {
+                                console.error('Errore durante la rimozione del giocatore:', error);
+                            });
+                    } else if (game && (game.gameStatus === 'running' || game.gameStatus === 'bidding' || game.gameStatus === 'results')) {
+                        // Se la partita è in corso, segna il giocatore come eliminato
+                        gameRef.child('players/' + playerId).update({
+                            isEliminated: true,
+                            remainingTime: 0
+                        }).then(() => {
+                            console.log('Giocatore segnato come eliminato');
+                        }).catch(error => {
+                            console.error('Errore durante l\'aggiornamento dello stato del giocatore:', error);
+                        });
+                    }
+                    
+                    // Pulisci i dati dal localStorage
+                    localStorage.removeItem('gameId');
+                    localStorage.removeItem('playerId');
+                    localStorage.removeItem('playerName');
+                    localStorage.removeItem('playerType');
+                    
+                    // Reindirizza alla pagina iniziale
+                    window.location.href = 'index.html';
+                }).catch(error => {
+                    console.error('Errore durante la verifica dello stato della partita:', error);
+                    // In caso di errore, reindirizza comunque
+                    window.location.href = 'index.html';
+                });
             }
         });
     </script>
