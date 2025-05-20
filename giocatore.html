@@ -105,34 +105,52 @@
             margin-top: 10px;
             color: #FFA500;
         }
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .game-info {
+            margin-bottom: 20px;
+        }
+        .bidding-container {
+            margin-bottom: 20px;
+        }
+        .round-results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-top: 1px solid #ddd;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h2>Round: <span id="current-round">0</span>/19</h2>
-        <div>Gettoni: <span id="tokens-count">0</span></div>
-        <button id="leave-game-btn" class="leave-button">Abbandona</button>
-    </div>
-
-    <div class="player-info">
-        <h2 id="player-name">Nome Giocatore</h2>
-        <div id="game-status">In attesa dell'inizio della partita...</div>
-    </div>
-
-    <div class="bid-area">
-        <button id="bid-button" class="bid-button" disabled>TIENI PREMUTO PER OFFRIRE</button>
-        <div id="bidding-timer" class="bidding-timer" style="display: none;">0.000s</div>
-        <div id="wait-message" class="wait-message">In attesa dell'inizio del round...</div>
-    </div>
-
-    <div id="confirmation-countdown" class="countdown" style="display: none;">5</div>
-
-    <div class="results">
-        <h3>Risultati Round <span id="result-round-number">0</span></h3>
-        <div id="round-result">
-            <!-- I risultati saranno aggiunti qui dinamicamente -->
-            Nessun risultato disponibile.
+    <div class="game-container">
+        <div class="game-info">
+            <h2>Round: <span id="current-round">0</span></h2>
+            <p>Gettoni: <span id="tokens-count">0</span></p>
+            <p>Tempo rimanente: <span id="remaining-time">10:00</span></p>
         </div>
+
+        <div class="bidding-container">
+            <div id="confirmation-countdown" style="display: none;">5</div>
+            <div id="bidding-timer" style="display: none;">0.000s</div>
+            <button id="bid-button" class="bid-button">TIENI PREMUTO PER PARTECIPARE</button>
+            <p id="wait-message"></p>
+        </div>
+
+        <div id="round-results" class="round-results" style="display: none;">
+            <!-- I risultati del round verranno inseriti qui -->
+        </div>
+
+        <button id="leave-game-btn" class="leave-button">Abbandona Partita</button>
     </div>
 
     <!-- Firebase SDK -->
@@ -178,17 +196,16 @@
         document.getElementById('player-name').textContent = playerName;
 
         // Variabili per la gestione delle offerte
-        let bidStartTime = 0;
-        let bidTimer = null;
-        let isBidding = false;
-        let playerData = null;
         let gameData = null;
-        let confirmationTimer = null;
-let confirmationTime = 5; // 5 secondi per confermare
+let playerData = null;
+let bidTimer = null;
+let confirmationTimer = null;
+let confirmationTime = 5;
 let confirmationCountdown = confirmationTime;
 let isConfirming = false;
 let isConfirmed = false;
 let actualBidStartTime = 0;
+let isBidding = false;  // Aggiungi questa variabile mancante
 
         // --- 3. Verifica della connessione Firebase (all'inizio della sezione <script>) ---
 const connectedRef = database.ref(".info/connected");
@@ -621,149 +638,83 @@ gameStatusRef.on('value', snapshot => {
 
         // Aggiorna i risultati del round
         function updateRoundResults(game) {
-            if (!game.rounds || game.currentRound === 0) {
+            const resultElement = document.getElementById('round-results');
+            if (!game.rounds || !game.currentRound || game.currentRound < 1) {
+                resultElement.style.display = 'none';
                 return;
             }
-            
-            const currentRound = game.currentRound;
-            const roundData = game.rounds[currentRound];
-            
+
+            const roundData = game.rounds[game.currentRound];
             if (!roundData || roundData.status !== 'completed') {
+                resultElement.style.display = 'none';
                 return;
             }
-            
-            // Aggiorna il numero del round nei risultati
-            document.getElementById('result-round-number').textContent = currentRound;
-            
-            // Elemento dove mostrare i risultati
-            const resultElement = document.getElementById('round-result');
-            resultElement.innerHTML = '';
-            
-            // Se non ci sono offerte
-            if (!roundData.bids || Object.keys(roundData.bids).length === 0) {
-                resultElement.textContent = 'Nessuna offerta in questo round.';
-                return;
-            }
-            
-            // Crea un array di offerte per ordinarle
-            const bidsArray = [];
-            
-            Object.keys(roundData.bids).forEach(pid => {
-                if (game.players[pid]) {
-                    bidsArray.push({
-                        playerId: pid,
-                        playerName: game.players[pid].name,
-                        bidTime: roundData.bids[pid],
-                        isWinner: roundData.winner === pid,
-                        isCurrentPlayer: pid === playerId
-                    });
-                }
-            });
-            
-            // Ordina per tempo offerto (discendente)
-            bidsArray.sort((a, b) => b.bidTime - a.bidTime);
-            
-            // Crea gli elementi HTML per i risultati
-            const resultsList = document.createElement('ul');
-            resultsList.style.listStyle = 'none';
-            resultsList.style.padding = '0';
-            
-            bidsArray.forEach(bid => {
-                const listItem = document.createElement('li');
-                listItem.style.padding = '5px 0';
-                
-                // Formatta il tempo offerto
-                const bidTimeFormatted = bid.bidTime.toFixed(3) + 's';
-                
-                // Crea il testo del risultato
-                let resultText = `${bid.playerName}: ${bidTimeFormatted}`;
-                
-                // Evidenzia se è il vincitore
-                if (bid.isWinner) {
-                    resultText += ' 🏆 VINCITORE!';
-                    listItem.style.fontWeight = 'bold';
-                    listItem.style.color = 'green';
-                }
-                
-                // Evidenzia se è il giocatore corrente
-                if (bid.isCurrentPlayer) {
-                    listItem.style.backgroundColor = '#f0f0f0';
-                    resultText += ' (tu)';
-                }
-                
-                listItem.textContent = resultText;
-                resultsList.appendChild(listItem);
-            });
-            
-            // Se c'è stato un pareggio
+
+            resultElement.style.display = 'block';
+            const resultsList = document.createElement('div');
+
             if (roundData.isTie) {
-                const tieItem = document.createElement('li');
-                tieItem.textContent = 'PAREGGIO - Nessun gettone assegnato';
-                tieItem.style.textAlign = 'center';
-                tieItem.style.fontWeight = 'bold';
-                tieItem.style.color = 'red';
-                tieItem.style.marginTop = '10px';
-                resultsList.appendChild(tieItem);
+                resultsList.innerHTML = '<p>Il round è terminato in parità!</p>';
+            } else if (roundData.winner) {
+                const winner = game.players[roundData.winner];
+                if (winner) {
+                    resultsList.innerHTML = `<p>Il vincitore del round è: ${winner.name}</p>`;
+                }
             }
-            
+
+            // Svuota il contenitore prima di aggiungere i nuovi risultati
+            while (resultElement.firstChild) {
+                resultElement.removeChild(resultElement.firstChild);
+            }
             resultElement.appendChild(resultsList);
         }
 
         // Gestione degli eventi quando la pagina si chiude
-        window.addEventListener('beforeunload', function() {
-            // Ferma qualsiasi offerta in corso
-            if (isBidding) {
-                stopBidding();
-            }
-        });
+        window.addEventListener('beforeunload', function(e) {
+    if (isConfirming || isConfirmed) {
+        // Ferma qualsiasi offerta in corso
+        if (isConfirmed) {
+            gameRef.child(`rounds/${gameData.currentRound}/bidding/${playerId}`).set(false);
+        }
+        // Pulisci i timer
+        if (confirmationTimer) clearInterval(confirmationTimer);
+        if (bidTimer) clearInterval(bidTimer);
+        
+        // Mostra un messaggio di conferma
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
 
         // Gestione del pulsante "Abbandona"
         document.getElementById('leave-game-btn').addEventListener('click', function() {
-            if (isBidding) {
-                // Se il giocatore sta facendo un'offerta, fermala
-                stopBidding();
+            if (isConfirming || isConfirmed) {
+                alert('Non puoi abbandonare mentre stai facendo un\'offerta');
+                return;
             }
             
-            // Chiedi conferma
             if (confirm('Sei sicuro di voler abbandonare la partita?')) {
-                // Rimuovi il giocatore dalla partita se questa è in attesa
-                gameRef.once('value').then(snapshot => {
-                    const game = snapshot.val();
-                    
-                    // Se la partita è ancora in attesa, rimuovi il giocatore
-                    if (game && game.gameStatus === 'waiting') {
-                        gameRef.child('players/' + playerId).remove()
-                            .then(() => {
-                                console.log('Giocatore rimosso dalla partita');
-                            })
-                            .catch(error => {
-                                console.error('Errore durante la rimozione del giocatore:', error);
-                            });
-                    } else if (game && (game.gameStatus === 'running' || game.gameStatus === 'bidding' || game.gameStatus === 'results')) {
-                        // Se la partita è in corso, segna il giocatore come eliminato
-                        gameRef.child('players/' + playerId).update({
-                            isEliminated: true,
-                            remainingTime: 0
-                        }).then(() => {
-                            console.log('Giocatore segnato come eliminato');
-                        }).catch(error => {
-                            console.error('Errore durante l\'aggiornamento dello stato del giocatore:', error);
-                        });
-                    }
-                    
-                    // Pulisci i dati dal localStorage
-                    localStorage.removeItem('gameId');
-                    localStorage.removeItem('playerId');
-                    localStorage.removeItem('playerName');
-                    localStorage.removeItem('playerType');
-                    
-                    // Reindirizza alla pagina iniziale
+                // Pulisci lo stato del giocatore nel database
+                if (gameData && playerData) {
+                    gameRef.child(`players/${playerId}`).update({
+                        isEliminated: true
+                    }).then(() => {
+                        // Pulisci il localStorage
+                        localStorage.removeItem('gameId');
+                        localStorage.removeItem('playerId');
+                        localStorage.removeItem('playerName');
+                        
+                        // Reindirizza alla pagina iniziale
+                        window.location.href = 'index.html';
+                    }).catch(error => {
+                        console.error('Errore durante l\'abbandono della partita:', error);
+                        // In caso di errore, reindirizza comunque
+                        window.location.href = 'index.html';
+                    });
+                } else {
+                    // Se non ci sono dati validi, reindirizza direttamente
                     window.location.href = 'index.html';
-                }).catch(error => {
-                    console.error('Errore durante la verifica dello stato della partita:', error);
-                    // In caso di errore, reindirizza comunque
-                    window.location.href = 'index.html';
-                });
+                }
             }
         });
     </script>

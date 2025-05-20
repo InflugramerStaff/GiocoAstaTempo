@@ -121,7 +121,17 @@
     </div>
 
     <!-- Sostituisci la vecchia code-display con questa versione più evidente -->
-<div class="code-display" id="game-id-display" style="font-size: 32px; color: #007bff; background-color: #f0f7ff; border: 2px solid #007bff; cursor: pointer;">
+<div class="code-display" id="game-id-display" style="
+    font-size: 32px; 
+    color: #007bff; 
+    background-color: #f0f7ff; 
+    border: 2px solid #007bff; 
+    padding: 15px;
+    margin: 20px 0;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    user-select: all;">
     Codice: ...
 </div>
 
@@ -267,6 +277,40 @@ const firebaseConfig = {
             alert('Accesso non autorizzato al tabellone.');
             window.location.href = 'index.html';
         }
+
+        // Recupera l'ID partita dal localStorage
+        const gameId = localStorage.getItem('gameId');
+        if (!gameId) {
+            alert('Nessuna partita trovata. Torna alla home.');
+            window.location.href = 'index.html';
+        }
+
+        // Log per debug
+        console.log("ID partita recuperato:", gameId);
+
+        // Mostra il codice partita
+        const codeDisplay = document.getElementById('game-id-display');
+        codeDisplay.textContent = 'Codice: ' + gameId;
+        codeDisplay.setAttribute('data-code', gameId);
+
+        // Riferimento alla partita nel database
+        const gameRef = database.ref('games/' + gameId);
+
+        // Verifica che la partita esista
+        gameRef.once('value').then(snapshot => {
+            if (!snapshot.exists()) {
+                alert('Partita non trovata nel database.');
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            console.log("Partita trovata nel database");
+            // La partita esiste, continua con il resto del codice
+        }).catch(error => {
+            console.error("Errore nella verifica della partita:", error);
+            alert('Errore nel recupero della partita. Torna alla home.');
+            window.location.href = 'index.html';
+        });
 
         // Funzione per aggiornare il codice partita
 function updateGameCode() {
@@ -781,24 +825,35 @@ connectedRef.on("value", (snap) => {
             alert(`Numero di giocatori impostato a ${expectedPlayers}. Condividi il codice partita per far unire i giocatori.`);
         });
 
-// Alla fine della sezione <script>, aggiungi la funzionalità per copiare il codice con un click
+// Alla fine della sezione <script> 
+
+// Click handler per copiare il codice
 document.getElementById('game-id-display').addEventListener('click', function() {
     const gameId = this.getAttribute('data-code');
     if (gameId) {
-        // Crea un input temporaneo per copiare il testo
-        const tempInput = document.createElement('input');
-        tempInput.value = gameId;
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        document.execCommand('copy');
-        document.body.removeChild(tempInput);
-
-        // Feedback visivo
-        const originalText = this.textContent;
-        this.textContent = 'Codice copiato!';
-        setTimeout(() => {
-            this.textContent = originalText;
-        }, 1500);
+        navigator.clipboard.writeText(gameId).then(() => {
+            // Feedback visivo
+            const originalText = this.textContent;
+            this.textContent = 'Codice copiato!';
+            setTimeout(() => {
+                this.textContent = 'Codice: ' + gameId;
+            }, 1500);
+        }).catch(err => {
+            // Fallback per browser più vecchi
+            const tempInput = document.createElement('input');
+            tempInput.value = gameId;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            
+            // Feedback visivo
+            const originalText = this.textContent;
+            this.textContent = 'Codice copiato!';
+            setTimeout(() => {
+                this.textContent = 'Codice: ' + gameId;
+            }, 1500);
+        });
     }
 });
     </script>
