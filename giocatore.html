@@ -59,6 +59,12 @@
             background-color: #cccccc;
             cursor: not-allowed;
         }
+        .bid-button.ready {
+            background-color: #4CAF50;
+        }
+        .bid-button.confirming {
+            background-color: #FFA500;
+        }
         .wait-message {
             font-size: 20px;
             margin-top: 20px;
@@ -94,6 +100,11 @@
         .leave-button:hover {
             background-color: #d32f2f;
         }
+        .countdown {
+            font-size: 24px;
+            margin-top: 10px;
+            color: #FFA500;
+        }
     </style>
 </head>
 <body>
@@ -113,6 +124,8 @@
         <div id="bidding-timer" class="bidding-timer" style="display: none;">0.000s</div>
         <div id="wait-message" class="wait-message">In attesa dell'inizio del round...</div>
     </div>
+
+    <div id="confirmation-countdown" class="countdown" style="display: none;">5</div>
 
     <div class="results">
         <h3>Risultati Round <span id="result-round-number">0</span></h3>
@@ -170,6 +183,12 @@
         let isBidding = false;
         let playerData = null;
         let gameData = null;
+        let confirmationTimer = null;
+let confirmationTime = 5; // 5 secondi per confermare
+let confirmationCountdown = confirmationTime;
+let isConfirming = false;
+let isConfirmed = false;
+let actualBidStartTime = 0;
 
         // Ascolta le modifiche alla partita
         gameRef.on('value', snapshot => {
@@ -213,7 +232,7 @@
         const biddingTimer = document.getElementById('bidding-timer');
         const waitMessage = document.getElementById('wait-message');
 
-        // Touch/Mousedown - Inizia l'offerta
+        // Touch/Mousedown - Inizia la conferma e poi l'offerta
         bidButton.addEventListener('pointerdown', function(e) {
             if (!gameData || !playerData || playerData.isEliminated || bidButton.disabled) {
                 return;
@@ -221,86 +240,175 @@
 
             // Previeni comportamenti indesiderati su mobile
             e.preventDefault();
-            
-            // Inizia a misurare il tempo
-            bidStartTime = Date.now();
-            isBidding = true;
-            
-            // Mostra il timer e nascondi il messaggio di attesa
-            biddingTimer.style.display = 'block';
-            waitMessage.style.display = 'none';
-            
-            // Aggiorna il timer visivamente
-            bidTimer = setInterval(function() {
-                const elapsedSeconds = (Date.now() - bidStartTime) / 1000;
-                biddingTimer.textContent = elapsedSeconds.toFixed(3) + 's';
-                
-                // Se il tempo supera quello disponibile, ferma l'offerta
-                if (elapsedSeconds >= playerData.remainingTime) {
-                    stopBidding();
-                }
-            }, 10); // Aggiorna ogni 10ms per maggiore precisione
+
+            // Se non stiamo già confermando, inizia la fase di conferma
+            if (!isConfirming && !isConfirmed) {
+                isConfirming = true;
+                confirmationCountdown = confirmationTime;
+
+                // Cambia l'aspetto del pulsante durante la conferma
+                bidButton.classList.add('confirming');
+                bidButton.textContent = 'TIENI PREMUTO PER CONFERMARE...';
+
+                // Mostra il countdown
+                const countdownElement = document.getElementById('confirmation-countdown');
+                countdownElement.style.display = 'block';
+                countdownElement.textContent = confirmationCountdown;
+
+                // Avvia il timer di conferma
+                confirmationTimer = setInterval(function() {
+                    confirmationCountdown--;
+                    countdownElement.textContent = confirmationCountdown;
+
+                    // Quando il countdown arriva a 0, passiamo alla fase di offerta
+                    if (confirmationCountdown <= 0) {
+                        clearInterval(confirmationTimer);
+                        isConfirming = false;
+                        isConfirmed = true;
+
+                        // Nascondi il countdown
+                        countdownElement.style.display = 'none';
+
+                        // Cambia l'aspetto del pulsante per l'offerta
+                        bidButton.classList.remove('confirming');
+                        bidButton.classList.add('ready');
+                        bidButton.textContent = 'STAI OFFRENDO...';
+
+                        // Notifica al database che il giocatore sta offrendo
+                        gameRef.child(`rounds/${gameData.currentRound}/bidding/${playerId}`).set(true);
+
+                        // Inizia a misurare il tempo effettivo di offerta
+                        actualBidStartTime = Date.now();
+
+                        // Mostra il timer di offerta
+                        biddingTimer.style.display = 'block';
+                        waitMessage.style.display = 'none';
+
+                        // Aggiorna il timer visivamente
+                        bidTimer = setInterval(function() {
+                            const elapsedSeconds = (Date.now() - actualBidStartTime) / 1000;
+                            biddingTimer.textContent = elapsedSeconds.toFixed(3) + 's';
+
+                            // Se il tempo supera quello disponibile, ferma l'offerta
+                            if (elapsedSeconds >= playerData.remainingTime) {
+                                stopBidding();
+                            }
+                        }, 10); // Aggiorna ogni 10ms per maggiore precisione
+                    }
+                }, 1000);
+            }
         });
 
-        // Touch/Mouseup - Termina l'offerta
-        bidButton.addEventListener('pointerup', stopBidding);
-        bidButton.addEventListener('pointercancel', stopBidding);
-        bidButton.addEventListener('pointerleave', stopBidding);
+        // Touch/Mouseup - Termina l'offerta o annulla la conferma
+        bidButton.addEventListener('pointerup', function(e) {
+            if (isConfirming) {
+                // Se il giocatore rilascia durante la fase di conferma, annulla tutto
+                clearInterval(confirmationTimer);
+                isConfirming = false;
 
-        // Se l'utente cambia scheda o finestra, interrompi l'offerta
-        window.addEventListener('blur', stopBidding);
+                // Ripristina l'aspetto del pulsante
+                bidButton.classList.remove('confirming');
+                bidButton.textContent = 'TIENI PREMUTO PER PARTECIPARE';
 
-        function stopBidding() {
-            if (!isBidding) return;
-            
-            isBidding = false;
-            clearInterval(bidTimer);
-            
-            // Calcola il tempo offerto in secondi
-            const endTime = Date.now();
-            const bidTime = (endTime - bidStartTime) / 1000;
-            
-            // Blocca l'input fino al prossimo round
-            bidButton.disabled = true;
-            
-            // Assicurati che il tempo offerto non superi il tempo residuo
-            const actualBidTime = Math.min(bidTime, playerData.remainingTime);
-            
-            // Nascondi il timer e mostra il messaggio di attesa
-            biddingTimer.style.display = 'none';
-            waitMessage.style.display = 'block';
-            waitMessage.textContent = `Hai offerto ${actualBidTime.toFixed(3)} secondi. In attesa degli altri giocatori...`;
-            
-            // Converti in millisecondi per una maggiore precisione
-            const bidTimeMs = actualBidTime * 1000;
-            const remainingTimeMs = playerData.remainingTime * 1000 - bidTimeMs;
-            const newRemainingTime = Math.max(0, remainingTimeMs / 1000);
-            
-            // Aggiorna il database con l'offerta e il tempo residuo
-            const currentRound = gameData.currentRound;
-            const updates = {};
-            
-            // Registra l'offerta
-            updates[`rounds/${currentRound}/bids/${playerId}`] = actualBidTime;
-            
-            // Aggiorna il tempo residuo e lo stato del giocatore
-            updates[`players/${playerId}/remainingTime`] = newRemainingTime;
-            updates[`players/${playerId}/isReady`] = true;
-            
-            // Se il giocatore ha esaurito il tempo, segnalo come eliminato
-            if (newRemainingTime <= 0) {
-                updates[`players/${playerId}/isEliminated`] = true;
+                // Nascondi il countdown
+                document.getElementById('confirmation-countdown').style.display = 'none';
+
+                // Notifica che il giocatore non partecipa a questo round
+                gameRef.child(`rounds/${gameData.currentRound}/participating/${playerId}`).set(false);
+
+                // Mostra messaggio di non partecipazione
+                waitMessage.style.display = 'block';
+                waitMessage.textContent = 'Hai scelto di non partecipare a questo round. In attesa del prossimo...';
+
+                // Blocca il pulsante per questo round
+                bidButton.disabled = true;
+            } else if (isConfirmed) {
+                // Se ha completato la conferma ed è in fase di offerta, procedi con stopBidding
+                stopBidding();
             }
-            
-            // Esegui l'aggiornamento al database
-            gameRef.update(updates).then(() => {
-                checkAllPlayersReady();
-            }).catch(error => {
-                console.error('Errore durante l\'aggiornamento dell\'offerta:', error);
-                waitMessage.textContent = 'Errore durante l\'invio dell\'offerta. Riprova.';
-                bidButton.disabled = false;
+        });
+
+        // Modifica la funzione stopBidding per gestire la nuova logica
+        function stopBidding() {
+            if (!isConfirmed) return;
+
+    isConfirmed = false;
+    clearInterval(bidTimer);
+
+    // Calcola il tempo offerto in secondi (solo il tempo dopo la conferma)
+    const endTime = Date.now();
+    const bidTime = (endTime - actualBidStartTime) / 1000;
+
+    // Blocca l'input fino al prossimo round
+    bidButton.disabled = true;
+    bidButton.classList.remove('ready');
+
+    // Assicurati che il tempo offerto non superi il tempo residuo
+    const actualBidTime = Math.min(bidTime, playerData.remainingTime);
+
+    // Nascondi il timer e mostra il messaggio di attesa
+    biddingTimer.style.display = 'none';
+    waitMessage.style.display = 'block';
+    waitMessage.textContent = `Hai offerto ${actualBidTime.toFixed(3)} secondi. In attesa degli altri giocatori...`;
+
+    // Notifica al database che il giocatore ha finito di offrire
+    gameRef.child(`rounds/${gameData.currentRound}/bidding/${playerId}`).set(false);
+
+    // Converti in millisecondi per una maggiore precisione
+    const bidTimeMs = actualBidTime * 1000;
+    const remainingTimeMs = playerData.remainingTime * 1000 - bidTimeMs;
+    const newRemainingTime = Math.max(0, remainingTimeMs / 1000);
+
+    // Aggiorna il database con l'offerta e il tempo residuo
+    const currentRound = gameData.currentRound;
+    const updates = {};
+
+    // Registra l'offerta
+    updates[`rounds/${currentRound}/bids/${playerId}`] = actualBidTime;
+
+    // Aggiorna il tempo residuo e lo stato del giocatore
+    updates[`players/${playerId}/remainingTime`] = newRemainingTime;
+    updates[`players/${playerId}/isReady`] = true;
+
+    // Se il giocatore ha esaurito il tempo, segnalo come eliminato
+    if (newRemainingTime <= 0) {
+        updates[`players/${playerId}/isEliminated`] = true;
+    }
+
+    // Esegui l'aggiornamento al database
+    gameRef.update(updates).then(() => {
+        // Verifica se questo è l'ultimo giocatore a rilasciare il pulsante
+        checkLastBidder();
+    }).catch(error => {
+        console.error('Errore durante l\'aggiornamento dell\'offerta:', error);
+        waitMessage.textContent = 'Errore durante l\'invio dell\'offerta. Riprova.';
+        bidButton.disabled = false;
+    });
+}
+
+// Aggiungi una funzione per verificare se questo è l'ultimo giocatore a rilasciare
+function checkLastBidder() {
+    gameRef.child(`rounds/${gameData.currentRound}/bidding`).once('value').then(snapshot => {
+        const biddingPlayers = snapshot.val();
+
+        // Se non ci sono più giocatori che stanno offrendo, questo è l'ultimo
+        let stillBidding = false;
+        if (biddingPlayers) {
+            Object.keys(biddingPlayers).forEach(pid => {
+                if (biddingPlayers[pid] === true) {
+                    stillBidding = true;
+                }
             });
         }
+
+        // Se questo è l'ultimo giocatore a rilasciare, segnalalo come vincitore
+        if (!stillBidding) {
+            gameRef.child(`rounds/${gameData.currentRound}`).update({
+                lastBidder: playerId
+            });
+        }
+    });
+}
 
         // Controlla se tutti i giocatori hanno fatto la loro offerta
         function checkAllPlayersReady() {
@@ -331,54 +439,60 @@
             });
         }
 
-        // Determina il vincitore del round
-        function determineRoundWinner(game) {
-            const currentRound = game.currentRound;
-            const roundData = game.rounds[currentRound];
-            
-            if (!roundData || !roundData.bids || Object.keys(roundData.bids).length === 0) {
-                return;
-            }
-            
-            // Trova l'offerta più alta
-            let highestBid = -1;
-            let highestBidders = [];
-            
-            Object.keys(roundData.bids).forEach(pid => {
-                const bid = roundData.bids[pid];
-                
-                if (bid > highestBid) {
-                    highestBid = bid;
-                    highestBidders = [pid];
-                } else if (bid === highestBid) {
-                    highestBidders.push(pid);
-                }
-            });
-            
-            // Crea l'oggetto con gli aggiornamenti
-            const updates = {
-                [`rounds/${currentRound}/status`]: 'completed',
-                gameStatus: 'results'
-            };
-            
-            // Se c'è un solo vincitore, assegna il gettone
-            if (highestBidders.length === 1) {
-                const winnerId = highestBidders[0];
-                updates[`rounds/${currentRound}/winner`] = winnerId;
-                updates[`rounds/${currentRound}/isTie`] = false;
-                
-                // Incrementa il contatore dei gettoni del vincitore
-                const currentTokens = game.players[winnerId].tokens || 0;
-                updates[`players/${winnerId}/tokens`] = currentTokens + 1;
-            } else {
-                // Pareggio, nessun vincitore
-                updates[`rounds/${currentRound}/winner`] = null;
-                updates[`rounds/${currentRound}/isTie`] = true;
-            }
-            
-            // Aggiorna il database
-            gameRef.update(updates);
+        // Questa funzione non è più necessaria poiché usiamo il lastBidder
+// La manteniamo solo come fallback in caso non ci sia un lastBidder definito
+function determineRoundWinner(game) {
+    const currentRound = game.currentRound;
+    const roundData = game.rounds[currentRound];
+
+    // Se c'è già un lastBidder, non facciamo nulla (la logica è gestita dal tabellone)
+    if (roundData && roundData.lastBidder) {
+        return;
+    }
+
+    // Fallback: vecchia logica solo se non c'è lastBidder
+    if (!roundData || !roundData.bids || Object.keys(roundData.bids).length === 0) {
+        return;
+    }
+
+    // Trova l'offerta più alta
+    let highestBid = -1;
+    let highestBidders = [];
+
+    Object.keys(roundData.bids).forEach(pid => {
+        const bid = roundData.bids[pid];
+        if (bid > highestBid) {
+            highestBid = bid;
+            highestBidders = [pid];
+        } else if (bid === highestBid) {
+            highestBidders.push(pid);
         }
+    });
+
+    // Crea l'oggetto con gli aggiornamenti
+    const updates = {
+        [`rounds/${currentRound}/status`]: 'completed',
+        gameStatus: 'results'
+    };
+
+    // Se c'è un solo vincitore, assegna il gettone
+    if (highestBidders.length === 1) {
+        const winnerId = highestBidders[0];
+        updates[`rounds/${currentRound}/winner`] = winnerId;
+        updates[`rounds/${currentRound}/isTie`] = false;
+
+        // Incrementa il contatore dei gettoni del vincitore
+        const currentTokens = game.players[winnerId].tokens || 0;
+        updates[`players/${winnerId}/tokens`] = currentTokens + 1;
+    } else {
+        // Pareggio, nessun vincitore
+        updates[`rounds/${currentRound}/winner`] = null;
+        updates[`rounds/${currentRound}/isTie`] = true;
+    }
+
+    // Aggiorna il database
+    gameRef.update(updates);
+}
 
         // Aggiorna lo stato del gioco nella UI
         function updateGameStatus(game) {

@@ -147,6 +147,15 @@
         </tbody>
     </table>
 
+    <!-- Fase di Offerta -->
+    <div class="bidding-status" style="margin-top: 20px; padding: 15px; background-color: #f0f0f0; border-radius: 8px; display: none;">
+        <h3>Fase di Offerta in Corso</h3>
+        <p>Tempo di offerta: <span id="bid-timer">0.00</span>s</p>
+        <div id="active-bidders">
+            <!-- Qui verranno mostrati i giocatori che stanno offrendo -->
+        </div>
+    </div>
+
     <div class="round-results">
         <h2>Risultati Round <span id="result-round-number">0</span></h2>
         <table id="round-results-table">
@@ -170,18 +179,20 @@
     <script>
         let expectedPlayers = 2;
 let isPlayerCountSet = false;
+let bidTimerInterval = null;
+let roundBidStartTime = 0;
 
-        // Inserisci qui la configurazione di Firebase che hai copiato
-        const firebaseConfig = {
-            // INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE
-            apiKey: "AIzaSyD3kaXir_Hs53Cq4wID7Uz0z5fQxKYJutI",
+// Inserisci qui la configurazione di Firebase che hai copiato
+const firebaseConfig = {
+    // INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE
+    apiKey: "AIzaSyD3kaXir_Hs53Cq4wID7Uz0z5fQxKYJutI",
   authDomain: "giocoastatempo.firebaseapp.com",
   databaseURL: "https://giocoastatempo-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "giocoastatempo",
   storageBucket: "giocoastatempo.firebasestorage.app",
   messagingSenderId: "1035401437404",
   appId: "1:1035401437404:web:b315574b573fb1997a5419"
-        };
+};
         
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
@@ -385,6 +396,89 @@ if (game.gameStatus === 'waiting') {
             const connectedPlayersCount = Object.keys(game.players || {}).length;
             document.getElementById('connected-players').textContent = connectedPlayersCount;
             document.getElementById('expected-players-count').textContent = game.expectedPlayers || 2;
+
+            // Gestisci la visualizzazione dello stato di offerta
+            const biddingStatusElement = document.querySelector('.bidding-status');
+
+if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRound]) {
+    const currentRoundData = game.rounds[game.currentRound];
+
+    // Se c'è almeno un giocatore che sta offrendo
+    if (currentRoundData.bidding) {
+        let anyoneBidding = false;
+        const activeBiddersElement = document.getElementById('active-bidders');
+        activeBiddersElement.innerHTML = '';
+
+        Object.keys(currentRoundData.bidding).forEach(pid => {
+            if (currentRoundData.bidding[pid] === true && game.players[pid]) {
+                anyoneBidding = true;
+
+                // Mostra chi sta offrendo
+                const bidderElement = document.createElement('div');
+                bidderElement.textContent = game.players[pid].name + ' sta offrendo';
+                bidderElement.style.color = '#4CAF50';
+                bidderElement.style.fontWeight = 'bold';
+                bidderElement.style.margin = '5px 0';
+                activeBiddersElement.appendChild(bidderElement);
+
+                // Se è il primo, avvia il timer
+                if (!bidTimerInterval) {
+                    roundBidStartTime = Date.now();
+                    bidTimerInterval = setInterval(function() {
+                        const elapsedTime = (Date.now() - roundBidStartTime) / 1000;
+                        document.getElementById('bid-timer').textContent = elapsedTime.toFixed(2);
+                    }, 10);
+                }
+            }
+        });
+
+        // Mostra o nascondi lo stato di offerta
+        biddingStatusElement.style.display = anyoneBidding ? 'block' : 'none';
+
+        // Se nessuno sta offrendo ma c'è un ultimo offerente, concludi il round
+        if (!anyoneBidding && currentRoundData.lastBidder && roundBidStartTime > 0) {
+            clearInterval(bidTimerInterval);
+            bidTimerInterval = null;
+
+            // Assegna il gettone all'ultimo giocatore che ha rilasciato
+            const winnerId = currentRoundData.lastBidder;
+
+            // Aggiorna lo stato del round
+            gameRef.child(`rounds/${game.currentRound}`).update({
+                status: 'completed',
+                winner: winnerId,
+                isTie: false
+            });
+
+            // Aggiorna il contatore di gettoni del vincitore
+            const currentTokens = game.players[winnerId].tokens || 0;
+            gameRef.child(`players/${winnerId}/tokens`).set(currentTokens + 1);
+
+            // Cambia lo stato del gioco
+            gameRef.update({
+                gameStatus: 'results'
+            });
+        }
+    } else {
+        biddingStatusElement.style.display = 'none';
+
+        // Resetta il timer se non c'è nessuno che sta offrendo
+        if (bidTimerInterval) {
+            clearInterval(bidTimerInterval);
+            bidTimerInterval = null;
+            roundBidStartTime = 0;
+        }
+    }
+} else {
+    biddingStatusElement.style.display = 'none';
+
+    // Resetta il timer se non siamo in fase di offerta
+    if (bidTimerInterval) {
+        clearInterval(bidTimerInterval);
+        bidTimerInterval = null;
+        roundBidStartTime = 0;
+    }
+}
         });
 
         // Pulsante per iniziare la partita
@@ -427,34 +521,37 @@ if (game.gameStatus === 'waiting') {
         document.getElementById('next-round-btn').addEventListener('click', function() {
             gameRef.once('value').then(snapshot => {
                 const game = snapshot.val();
-                
+
                 if (!game || (game.gameStatus !== 'running' && game.gameStatus !== 'results')) {
                     return;
                 }
-                
+
                 // Se siamo all'ultimo round, termina la partita
                 if (game.currentRound >= game.totalRounds) {
                     determineWinner(game);
                     return;
                 }
-                
+
                 // Altrimenti, prepara il prossimo round
                 const nextRound = game.currentRound + 1;
-                
+
                 // Prepara l'oggetto aggiornamento
                 const updates = {
                     currentRound: nextRound,
                     gameStatus: 'bidding'
                 };
-                
+
                 // Crea la struttura per il nuovo round
                 updates[`rounds/${nextRound}`] = {
                     status: 'bidding',
                     bids: {},
+                    bidding: {},
+                    participating: {},
                     winner: null,
+                    lastBidder: null,
                     isTie: false
                 };
-                
+
                 // Resetta lo stato "isReady" di tutti i giocatori che non sono eliminati
                 if (game.players) {
                     Object.keys(game.players).forEach(playerId => {
@@ -463,7 +560,7 @@ if (game.gameStatus === 'waiting') {
                         }
                     });
                 }
-                
+
                 // Aggiorna il database
                 gameRef.update(updates);
             });
