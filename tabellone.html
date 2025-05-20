@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabellone - Gioco d'Asta a Tempo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .player-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .player-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .eliminated {
+            background-color: #ffcccc;
+            opacity: 0.7;
+        }
+        .round-results {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .winner {
+            font-weight: bold;
+            color: green;
+        }
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .code-display {
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Tabellone - Gioco d'Asta a Tempo</h1>
+        <div>
+            <button class="button" id="start-game-btn">Inizia Partita</button>
+            <button class="button" id="next-round-btn" disabled>Prossimo Round</button>
+        </div>
+    </div>
+
+    <div class="code-display" id="game-id-display">Codice: ...</div>
+
+    <div class="game-info">
+        <div>Round: <span id="current-round">0</span>/19</div>
+        <div>Stato: <span id="game-status">In attesa di giocatori</span></div>
+    </div>
+
+    <h2>Giocatori</h2>
+    <table id="players-table">
+        <thead>
+            <tr>
+                <th>Giocatore</th>
+                <th>Tempo Residuo</th>
+                <th>Gettoni</th>
+                <th>Stato</th>
+            </tr>
+        </thead>
+        <tbody id="players-list">
+            <!-- I giocatori verranno aggiunti qui dinamicamente -->
+        </tbody>
+    </table>
+
+    <div class="round-results">
+        <h2>Risultati Round <span id="result-round-number">0</span></h2>
+        <table id="round-results-table">
+            <thead>
+                <tr>
+                    <th>Giocatore</th>
+                    <th>Offerta</th>
+                    <th>Risultato</th>
+                </tr>
+            </thead>
+            <tbody id="round-results-list">
+                <!-- I risultati verranno aggiunti qui dinamicamente -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <script>
+        // Inserisci qui la configurazione di Firebase che hai copiato
+        const firebaseConfig = {
+            // INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE
+            apiKey: "AIzaSyD3kaXir_Hs53Cq4wID7Uz0z5fQxKYJutI",
+  authDomain: "giocoastatempo.firebaseapp.com",
+  databaseURL: "https://giocoastatempo-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "giocoastatempo",
+  storageBucket: "giocoastatempo.firebasestorage.app",
+  messagingSenderId: "1035401437404",
+  appId: "1:1035401437404:web:b315574b573fb1997a5419"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Controlla se siamo autorizzati come host
+        if (localStorage.getItem('playerType') !== 'host') {
+            alert('Accesso non autorizzato al tabellone.');
+            window.location.href = 'index.html';
+        }
+
+        const gameId = localStorage.getItem('gameId');
+        if (!gameId) {
+            alert('Nessuna partita trovata. Torna alla home.');
+            window.location.href = 'index.html';
+        }
+
+        // Riferimento alla partita nel database
+        const gameRef = database.ref('games/' + gameId);
+        
+        // Mostra il codice partita
+        document.getElementById('game-id-display').textContent = 'Codice: ' + gameId;
+
+        // Ascolta le modifiche alla partita
+        gameRef.on('value', snapshot => {
+            const game = snapshot.val();
+            if (!game) {
+                alert('Partita non trovata.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Aggiorna le informazioni di gioco
+            document.getElementById('current-round').textContent = game.currentRound;
+            
+            // Aggiorna lo stato del gioco
+            let statusText = 'Sconosciuto';
+            switch(game.gameStatus) {
+                case 'waiting':
+                    statusText = 'In attesa di giocatori';
+                    break;
+                case 'running':
+                    statusText = 'In corso';
+                    break;
+                case 'bidding':
+                    statusText = 'Round in corso - Offerte';
+                    break;
+                case 'results':
+                    statusText = 'Visualizzazione risultati';
+                    break;
+                case 'completed':
+                    statusText = 'Partita terminata';
+                    break;
+            }
+            document.getElementById('game-status').textContent = statusText;
+
+            // Aggiorna l'elenco dei giocatori
+            const playersList = document.getElementById('players-list');
+            playersList.innerHTML = '';
+
+            if (game.players) {
+                Object.values(game.players).forEach(player => {
+                    const row = document.createElement('tr');
+                    if (player.isEliminated) {
+                        row.classList.add('eliminated');
+                    }
+
+                    const nameCell = document.createElement('td');
+                    nameCell.textContent = player.name;
+                    
+                    const timeCell = document.createElement('td');
+                    const minutes = Math.floor(player.remainingTime / 60);
+                    const seconds = player.remainingTime % 60;
+                    timeCell.textContent = player.isEliminated ? 'ELIMINATO' : 
+                        `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
+                    
+                    const tokensCell = document.createElement('td');
+                    tokensCell.textContent = player.tokens;
+                    
+                    const statusCell = document.createElement('td');
+                    statusCell.textContent = player.isEliminated ? 'Eliminato' : 
+                        (player.isReady ? 'Pronto' : 'In attesa');
+
+                    row.appendChild(nameCell);
+                    row.appendChild(timeCell);
+                    row.appendChild(tokensCell);
+                    row.appendChild(statusCell);
+                    
+                    playersList.appendChild(row);
+                });
+            }
+
+            // Aggiorna i risultati del round corrente o precedente
+            if (game.rounds && game.currentRound > 0) {
+                const currentRoundData = game.rounds[game.currentRound];
+                
+                if (currentRoundData && currentRoundData.status === 'completed') {
+                    document.getElementById('result-round-number').textContent = game.currentRound;
+                    
+                    const resultsList = document.getElementById('round-results-list');
+                    resultsList.innerHTML = '';
+
+                    if (game.players && currentRoundData.bids) {
+                        // Converti i bid in una struttura più facilmente ordinabile
+                        const bidsArray = [];
+                        
+                        Object.keys(currentRoundData.bids).forEach(playerId => {
+                            if (game.players[playerId]) {
+                                bidsArray.push({
+                                    playerId: playerId,
+                                    playerName: game.players[playerId].name,
+                                    bidTime: currentRoundData.bids[playerId],
+                                    isWinner: currentRoundData.winner === playerId
+                                });
+                            }
+                        });
+
+                        // Ordina per tempo offerto (discendente)
+                        bidsArray.sort((a, b) => b.bidTime - a.bidTime);
+
+                        // Crea le righe della tabella dei risultati
+                        bidsArray.forEach(bid => {
+                            const row = document.createElement('tr');
+                            if (bid.isWinner) {
+                                row.classList.add('winner');
+                            }
+
+                            const nameCell = document.createElement('td');
+                            nameCell.textContent = bid.playerName;
+                            
+                            const bidCell = document.createElement('td');
+                            const seconds = Math.floor(bid.bidTime);
+                            const milliseconds = Math.floor((bid.bidTime - seconds) * 1000);
+                            bidCell.textContent = `${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
+                            
+                            const resultCell = document.createElement('td');
+                            resultCell.textContent = bid.isWinner ? 'VINCITORE' : '';
+                            
+                            row.appendChild(nameCell);
+                            row.appendChild(bidCell);
+                            row.appendChild(resultCell);
+                            
+                            resultsList.appendChild(row);
+                        });
+
+                        // Se c'è stato un pareggio
+                        if (currentRoundData.isTie) {
+                            const tieRow = document.createElement('tr');
+                            const tieCell = document.createElement('td');
+                            tieCell.colSpan = 3;
+                            tieCell.textContent = 'PAREGGIO - Nessun gettone assegnato';
+                            tieCell.style.textAlign = 'center';
+                            tieCell.style.fontWeight = 'bold';
+                            tieCell.style.color = 'red';
+                            tieRow.appendChild(tieCell);
+                            resultsList.appendChild(tieRow);
+                        }
+                    }
+                }
+            }
+
+            // Gestisci lo stato dei pulsanti
+            const startGameBtn = document.getElementById('start-game-btn');
+            const nextRoundBtn = document.getElementById('next-round-btn');
+
+            if (game.gameStatus === 'waiting') {
+                startGameBtn.disabled = Object.keys(game.players || {}).length < 2;
+                nextRoundBtn.disabled = true;
+            } else if (game.gameStatus === 'running' || game.gameStatus === 'results') {
+                startGameBtn.disabled = true;
+                nextRoundBtn.disabled = false;
+            } else if (game.gameStatus === 'bidding') {
+                startGameBtn.disabled = true;
+                nextRoundBtn.disabled = true;
+            } else if (game.gameStatus === 'completed') {
+                startGameBtn.disabled = true;
+                nextRoundBtn.disabled = true;
+            }
+        });
+
+        // Pulsante per iniziare la partita
+        document.getElementById('start-game-btn').addEventListener('click', function() {
+            gameRef.once('value').then(snapshot => {
+                const game = snapshot.val();
+                
+                if (!game || game.gameStatus !== 'waiting') {
+                    return;
+                }
+                
+                if (Object.keys(game.players || {}).length < 2) {
+                    alert('Sono necessari almeno 2 giocatori per iniziare la partita.');
+                    return;
+                }
+                
+                // Aggiorna lo stato del gioco
+                gameRef.update({
+                    gameStatus: 'running',
+                    currentRound: 1,
+                    rounds: {
+                        1: {
+                            status: 'waiting',
+                            bids: {},
+                            winner: null,
+                            isTie: false
+                        }
+                    }
+                });
+            });
+        });
+
+        // Pulsante per il prossimo round
+        document.getElementById('next-round-btn').addEventListener('click', function() {
+            gameRef.once('value').then(snapshot => {
+                const game = snapshot.val();
+                
+                if (!game || (game.gameStatus !== 'running' && game.gameStatus !== 'results')) {
+                    return;
+                }
+                
+                // Se siamo all'ultimo round, termina la partita
+                if (game.currentRound >= game.totalRounds) {
+                    determineWinner(game);
+                    return;
+                }
+                
+                // Altrimenti, prepara il prossimo round
+                const nextRound = game.currentRound + 1;
+                
+                // Prepara l'oggetto aggiornamento
+                const updates = {
+                    currentRound: nextRound,
+                    gameStatus: 'bidding'
+                };
+                
+                // Crea la struttura per il nuovo round
+                updates[`rounds/${nextRound}`] = {
+                    status: 'bidding',
+                    bids: {},
+                    winner: null,
+                    isTie: false
+                };
+                
+                // Resetta lo stato "isReady" di tutti i giocatori che non sono eliminati
+                if (game.players) {
+                    Object.keys(game.players).forEach(playerId => {
+                        if (!game.players[playerId].isEliminated) {
+                            updates[`players/${playerId}/isReady`] = false;
+                        }
+                    });
+                }
+                
+                // Aggiorna il database
+                gameRef.update(updates);
+            });
+        });
+
+        // Funzione per determinare il vincitore della partita
+        function determineWinner(game) {
+            // Trova il giocatore con più gettoni
+            let maxTokens = -1;
+            let winnersIds = [];
+            
+            Object.keys(game.players).forEach(playerId => {
+                const player = game.players[playerId];
+                if (player.tokens > maxTokens) {
+                    maxTokens = player.tokens;
+                    winnersIds = [playerId];
+                } else if (player.tokens === maxTokens) {
+                    winnersIds.push(playerId);
+                }
+            });
+            
+            // Se c'è un solo vincitore
+            if (winnersIds.length === 1) {
+                gameRef.update({
+                    gameStatus: 'completed',
+                    winner: winnersIds[0]
+                });
+                alert(`Il vincitore è ${game.players[winnersIds[0]].name} con ${maxTokens} gettoni!`);
+                return;
+            }
+            
+            // In caso di parità, considera il tempo residuo
+            let maxTime = -1;
+            let finalWinnerId = null;
+            
+            winnersIds.forEach(playerId => {
+                const player = game.players[playerId];
+                if (player.remainingTime > maxTime) {
+                    maxTime = player.remainingTime;
+                    finalWinnerId = playerId;
+                }
+            });
+            
+            gameRef.update({
+                gameStatus: 'completed',
+                winner: finalWinnerId
+            });
+            
+            alert(`Il vincitore è ${game.players[finalWinnerId].name} con ${maxTokens} gettoni e più tempo residuo!`);
+        }
+    </script>
+</body>
+</html>

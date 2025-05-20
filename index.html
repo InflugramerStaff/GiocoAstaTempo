@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gioco d'Asta a Tempo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 2px;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .input-field {
+            width: 100%;
+            padding: 12px 20px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border: 2px solid #ccc;
+            border-radius: 4px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gioco d'Asta a Tempo</h1>
+    
+    <div id="home-screen">
+        <button class="button" id="create-game">Crea Nuova Partita</button>
+        <button class="button" id="join-game">Unisciti a Partita</button>
+    </div>
+
+    <div id="create-screen" class="hidden">
+        <h2>Crea Nuova Partita</h2>
+        <label for="player-name">Il tuo nome:</label>
+        <input type="text" id="creator-name" class="input-field" placeholder="Inserisci il tuo nome">
+        <button class="button" id="start-as-host">Crea come Tabellone</button>
+        <p><button class="button" id="back-from-create">Indietro</button></p>
+    </div>
+
+    <div id="join-screen" class="hidden">
+        <h2>Unisciti a Partita</h2>
+        <label for="game-id">Codice Partita:</label>
+        <input type="text" id="game-id" class="input-field" placeholder="Inserisci il codice partita">
+        <label for="player-name">Il tuo nome:</label>
+        <input type="text" id="player-name" class="input-field" placeholder="Inserisci il tuo nome">
+        <button class="button" id="join-as-player">Unisciti come Giocatore</button>
+        <p><button class="button" id="back-from-join">Indietro</button></p>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <script>
+        // Inserisci qui la configurazione di Firebase che hai copiato
+        const firebaseConfig = {
+            // INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE
+             apiKey: "AIzaSyD3kaXir_Hs53Cq4wID7Uz0z5fQxKYJutI",
+  authDomain: "giocoastatempo.firebaseapp.com",
+  databaseURL: "https://giocoastatempo-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "giocoastatempo",
+  storageBucket: "giocoastatempo.firebasestorage.app",
+  messagingSenderId: "1035401437404",
+  appId: "1:1035401437404:web:b315574b573fb1997a5419"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Funzioni di navigazione tra schermate
+        document.getElementById('create-game').addEventListener('click', function() {
+            document.getElementById('home-screen').classList.add('hidden');
+            document.getElementById('create-screen').classList.remove('hidden');
+        });
+
+        document.getElementById('join-game').addEventListener('click', function() {
+            document.getElementById('home-screen').classList.add('hidden');
+            document.getElementById('join-screen').classList.remove('hidden');
+        });
+
+        document.getElementById('back-from-create').addEventListener('click', function() {
+            document.getElementById('create-screen').classList.add('hidden');
+            document.getElementById('home-screen').classList.remove('hidden');
+        });
+
+        document.getElementById('back-from-join').addEventListener('click', function() {
+            document.getElementById('join-screen').classList.add('hidden');
+            document.getElementById('home-screen').classList.remove('hidden');
+        });
+
+        // Crea una nuova partita
+        document.getElementById('start-as-host').addEventListener('click', function() {
+            const creatorName = document.getElementById('creator-name').value.trim();
+            if (!creatorName) {
+                alert('Inserisci il tuo nome');
+                return;
+            }
+
+            // Genera un ID partita casuale di 6 caratteri
+            const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
+            // Crea la struttura iniziale della partita
+            const gameRef = database.ref('games/' + gameId);
+            
+            gameRef.set({
+                gameId: gameId,
+                gameStatus: 'waiting', // waiting, running, completed
+                currentRound: 0,
+                totalRounds: 19,
+                createdBy: creatorName,
+                players: {}
+            }).then(() => {
+                // Salva l'ID nella memoria del browser
+                localStorage.setItem('gameId', gameId);
+                localStorage.setItem('playerType', 'host');
+                
+                // Reindirizza al tabellone
+                window.location.href = 'tabellone.html';
+            }).catch(error => {
+                console.error('Errore durante la creazione della partita:', error);
+                alert('Errore durante la creazione della partita. Riprova.');
+            });
+        });
+
+        // Unisciti a una partita esistente
+        document.getElementById('join-as-player').addEventListener('click', function() {
+            const gameId = document.getElementById('game-id').value.trim().toUpperCase();
+            const playerName = document.getElementById('player-name').value.trim();
+            
+            if (!gameId || !playerName) {
+                alert('Inserisci sia il codice partita che il tuo nome');
+                return;
+            }
+
+            // Verifica se la partita esiste
+            const gameRef = database.ref('games/' + gameId);
+            
+            gameRef.once('value').then(snapshot => {
+                if (!snapshot.exists()) {
+                    alert('Partita non trovata. Verifica il codice.');
+                    return;
+                }
+
+                const game = snapshot.val();
+                if (game.gameStatus !== 'waiting') {
+                    alert('Questa partita è già iniziata o è terminata.');
+                    return;
+                }
+
+                // Genera un ID giocatore
+                const playerId = 'player_' + Date.now();
+                
+                // Aggiungi il giocatore alla partita
+                gameRef.child('players/' + playerId).set({
+                    id: playerId,
+                    name: playerName,
+                    remainingTime: 600, // 10 minuti in secondi
+                    tokens: 0,
+                    isEliminated: false,
+                    isReady: true
+                }).then(() => {
+                    // Salva le informazioni nella memoria del browser
+                    localStorage.setItem('gameId', gameId);
+                    localStorage.setItem('playerId', playerId);
+                    localStorage.setItem('playerName', playerName);
+                    localStorage.setItem('playerType', 'player');
+                    
+                    // Reindirizza all'interfaccia giocatore
+                    window.location.href = 'giocatore.html';
+                }).catch(error => {
+                    console.error('Errore durante l\'aggiunta del giocatore:', error);
+                    alert('Errore durante l\'unione alla partita. Riprova.');
+                });
+            }).catch(error => {
+                console.error('Errore durante la verifica della partita:', error);
+                alert('Errore durante la verifica della partita. Riprova.');
+            });
+        });
+    </script>
+</body>
+</html>
