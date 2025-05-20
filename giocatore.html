@@ -260,6 +260,114 @@ connectedRef.on("value", (snap) => {
         const biddingTimer = document.getElementById('bidding-timer');
         const waitMessage = document.getElementById('wait-message');
 
+        // Aggiungi questi listener per gestire sia touch che mouse
+        bidButton.addEventListener('mousedown', handleBidStart);
+        bidButton.addEventListener('touchstart', handleBidStart);
+        bidButton.addEventListener('mouseup', handleBidEnd);
+        bidButton.addEventListener('touchend', handleBidEnd);
+        bidButton.addEventListener('mouseleave', handleBidEnd);
+        bidButton.addEventListener('touchcancel', handleBidEnd);
+
+        function handleBidStart(e) {
+            e.preventDefault(); // Previene comportamenti indesiderati
+            
+            if (!gameData || !playerData || playerData.isEliminated || bidButton.disabled) {
+                return;
+            }
+
+            // Se non stiamo già confermando, inizia la fase di conferma
+            if (!isConfirming && !isConfirmed) {
+                isConfirming = true;
+                confirmationCountdown = confirmationTime;
+
+                // Cambia l'aspetto del pulsante durante la conferma
+                bidButton.classList.add('confirming');
+                bidButton.textContent = 'TIENI PREMUTO PER CONFERMARE...';
+
+                // Mostra il countdown
+                const countdownElement = document.getElementById('confirmation-countdown');
+                countdownElement.style.display = 'block';
+                countdownElement.textContent = confirmationCountdown;
+
+                // Avvia il timer di conferma
+                if (confirmationTimer) clearInterval(confirmationTimer);
+                confirmationTimer = setInterval(function() {
+                    confirmationCountdown--;
+                    countdownElement.textContent = confirmationCountdown;
+
+                    if (confirmationCountdown <= 0) {
+                        startBidding();
+                    }
+                }, 1000);
+            }
+        }
+
+        function handleBidEnd(e) {
+            e.preventDefault(); // Previene comportamenti indesiderati
+            
+            if (isConfirming) {
+                // Annulla la conferma se rilasciato troppo presto
+                cancelConfirmation();
+            } else if (isConfirmed) {
+                // Ferma l'offerta se era in corso
+                stopBidding();
+            }
+        }
+
+        function startBidding() {
+            clearInterval(confirmationTimer);
+            isConfirming = false;
+            isConfirmed = true;
+
+            // Nascondi il countdown
+            document.getElementById('confirmation-countdown').style.display = 'none';
+
+            // Cambia l'aspetto del pulsante per l'offerta
+            bidButton.classList.remove('confirming');
+            bidButton.classList.add('ready');
+            bidButton.textContent = 'STAI OFFRENDO...';
+
+            // Notifica al database
+            gameRef.child(`rounds/${gameData.currentRound}/bidding/${playerId}`).set(true);
+
+            // Inizia a misurare il tempo
+            actualBidStartTime = Date.now();
+
+            // Mostra il timer di offerta
+            biddingTimer.style.display = 'block';
+            waitMessage.style.display = 'none';
+
+            // Aggiorna il timer visivamente
+            if (bidTimer) clearInterval(bidTimer);
+            bidTimer = setInterval(function() {
+                const elapsedSeconds = (Date.now() - actualBidStartTime) / 1000;
+                biddingTimer.textContent = elapsedSeconds.toFixed(3) + 's';
+
+                if (elapsedSeconds >= playerData.remainingTime) {
+                    stopBidding();
+                }
+            }, 10);
+        }
+
+        function cancelConfirmation() {
+            clearInterval(confirmationTimer);
+            isConfirming = false;
+
+            // Ripristina l'aspetto del pulsante
+            bidButton.classList.remove('confirming');
+            bidButton.textContent = 'TIENI PREMUTO PER PARTECIPARE';
+
+            // Nascondi il countdown
+            document.getElementById('confirmation-countdown').style.display = 'none';
+
+            // Notifica la non partecipazione
+            gameRef.child(`rounds/${gameData.currentRound}/participating/${playerId}`).set(false);
+
+            // Mostra messaggio
+            waitMessage.style.display = 'block';
+            waitMessage.textContent = 'Hai rilasciato troppo presto. Riprova.';
+        }
+
         // Touch/Mousedown - Inizia la conferma e poi l'offerta
         bidButton.addEventListener('pointerdown', function(e) {
             if (!gameData || !playerData || playerData.isEliminated || bidButton.disabled) {
