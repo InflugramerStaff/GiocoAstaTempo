@@ -425,150 +425,166 @@ const firebaseConfig = {
             const nextRoundBtn = document.getElementById('next-round-btn');
             const connectedPlayersElement = document.getElementById('connected-players');
 
+console.log("Stato attuale del gioco:", game.gameStatus);
+
 if (game.gameStatus === 'waiting') {
     const playerCount = Object.keys(game.players || {}).length;
     connectedPlayersElement.textContent = playerCount;
-
-    // Abilita il pulsante di inizio solo se tutti i giocatori attesi sono connessi
-    startGameBtn.disabled = !isPlayerCountSet || playerCount < expectedPlayers;
-    nextRoundBtn.disabled = true;
-
-    // Assicurati che il pulsante abbia l'aspetto corretto per "Inizia Partita"
     startGameBtn.textContent = 'Inizia Partita';
     startGameBtn.className = 'button';
-
-    // Se il numero di giocatori attesi è già impostato nel database, aggiornalo nell'interfaccia
-    if (game.expectedPlayers && !isPlayerCountSet) {
-        expectedPlayers = game.expectedPlayers;
-        document.getElementById('expected-players').value = expectedPlayers;
-        document.getElementById('expected-players-count').textContent = expectedPlayers;
-        document.getElementById('expected-players').disabled = true;
-        document.getElementById('set-players-btn').disabled = true;
-        isPlayerCountSet = true;
-    }
-} else if (game.gameStatus === 'running' || game.gameStatus === 'bidding' || game.gameStatus === 'results') {
-    // Cambia l'aspetto e la funzione del pulsante a "Concludi il gioco"
+    startGameBtn.disabled = !isPlayerCountSet || playerCount < expectedPlayers;
+    nextRoundBtn.disabled = true;
+} else if (game.gameStatus === 'running') {
     startGameBtn.textContent = 'Concludi il gioco';
     startGameBtn.className = 'end-game-btn';
     startGameBtn.disabled = false;
-
-    nextRoundBtn.disabled = game.gameStatus === 'bidding';
+    nextRoundBtn.disabled = false; // Abilitato in stato running
+} else if (game.gameStatus === 'bidding') {
+    startGameBtn.textContent = 'Concludi il gioco';
+    startGameBtn.className = 'end-game-btn';
+    startGameBtn.disabled = false;
+    nextRoundBtn.disabled = true; // Disabilitato durante le offerte
+} else if (game.gameStatus === 'results') {
+    startGameBtn.textContent = 'Concludi il gioco';
+    startGameBtn.className = 'end-game-btn';
+    startGameBtn.disabled = false;
+    nextRoundBtn.disabled = false; // Abilitato dopo la visualizzazione dei risultati
 } else if (game.gameStatus === 'completed') {
     startGameBtn.disabled = true;
     nextRoundBtn.disabled = true;
 }
 
-            // Aggiorna il numero di giocatori connessi
-            const connectedPlayersCount = Object.keys(game.players || {}).length;
-            document.getElementById('connected-players').textContent = connectedPlayersCount;
-            document.getElementById('expected-players-count').textContent = game.expectedPlayers || 2;
+console.log("Pulsante prossimo round disabilitato:", nextRoundBtn.disabled);
 
-            // Gestisci la visualizzazione dello stato di offerta
-            const biddingStatusElement = document.querySelector('.bidding-status');
+// --- Event listener robusto per il pulsante "Prossimo Round" ---
+document.getElementById('next-round-btn').addEventListener('click', function() {
+    const btn = this;
+    btn.disabled = true;
+    console.log("Pulsante Prossimo Round cliccato!");
 
-if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRound]) {
-    const currentRoundData = game.rounds[game.currentRound];
+    gameRef.once('value').then(snapshot => {
+        const game = snapshot.val();
+        console.log("Stato del gioco:", game.gameStatus);
+        console.log("Round corrente:", game.currentRound);
 
-    // Se c'è almeno un giocatore che sta offrendo
-    if (currentRoundData.bidding) {
-        let anyoneBidding = false;
-        const activeBiddersElement = document.getElementById('active-bidders');
-        activeBiddersElement.innerHTML = '';
+        if (!game || (game.gameStatus !== 'running' && game.gameStatus !== 'results')) {
+            console.log("Stato non valido per avanzare al prossimo round");
+            btn.disabled = false;
+            return;
+        }
 
-        Object.keys(currentRoundData.bidding).forEach(pid => {
-            if (currentRoundData.bidding[pid] === true && game.players[pid]) {
-                anyoneBidding = true;
+        if (game.currentRound >= game.totalRounds) {
+            console.log("Ultimo round completato, determinazione del vincitore");
+            determineWinner(game);
+            return;
+        }
 
-                // Mostra chi sta offrendo
-                const bidderElement = document.createElement('div');
-                bidderElement.textContent = game.players[pid].name + ' sta offrendo';
-                bidderElement.style.color = '#4CAF50';
-                bidderElement.style.fontWeight = 'bold';
-                bidderElement.style.margin = '5px 0';
-                activeBiddersElement.appendChild(bidderElement);
+        const nextRound = game.currentRound + 1;
+        console.log("Avanzamento al round:", nextRound);
 
-                // Se è il primo, avvia il timer
-                if (!bidTimerInterval) {
-                    roundBidStartTime = Date.now();
-                    bidTimerInterval = setInterval(function() {
-                        const elapsedTime = (Date.now() - roundBidStartTime) / 1000;
-                        document.getElementById('bid-timer').textContent = elapsedTime.toFixed(2);
-                    }, 10);
+        const updates = {
+            currentRound: nextRound,
+            gameStatus: 'bidding'
+        };
+
+        updates[`rounds/${nextRound}`] = {
+            status: 'bidding',
+            bids: {},
+            bidding: {},
+            participating: {},
+            winner: null,
+            lastBidder: null,
+            isTie: false
+        };
+
+        if (game.players) {
+            Object.keys(game.players).forEach(playerId => {
+                if (!game.players[playerId].isEliminated) {
+                    updates[`players/${playerId}/isReady`] = false;
                 }
-            }
+            });
+        }
+
+        gameRef.update(updates).then(() => {
+            console.log("Database aggiornato con successo per il round", nextRound);
+            resetRoundTimer();
+            setTimeout(() => {
+                btn.disabled = false;
+            }, 1000);
+        }).catch(error => {
+            console.error("Errore nell'aggiornamento del database:", error);
+            btn.disabled = false;
         });
+    }).catch(error => {
+        console.error("Errore nella lettura del database:", error);
+        btn.disabled = false;
+    });
+});
 
-        // Mostra o nascondi lo stato di offerta
-        biddingStatusElement.style.display = anyoneBidding ? 'block' : 'none';
+// --- Migliorato: Determinazione del vincitore del round con log ---
+if (!anyoneBidding && currentRoundData.lastBidder && roundStartTime > 0) {
+    console.log("Fine del round, ultimo offerente:", currentRoundData.lastBidder);
 
-        // Se nessuno sta offrendo ma c'è un ultimo offerente, concludi il round
-        if (!anyoneBidding && currentRoundData.lastBidder && roundStartTime > 0) {
-            clearInterval(bidTimerInterval);
-            bidTimerInterval = null;
+    clearInterval(bidTimerInterval);
+    bidTimerInterval = null;
 
-            // Calcola e salva la durata del round
-            const roundDuration = Date.now() - roundStartTime;
+    const roundDuration = Date.now() - roundStartTime;
+    const winnerId = currentRoundData.lastBidder;
 
-            // Assegna il gettone all'ultimo giocatore che ha rilasciato
-            const winnerId = currentRoundData.lastBidder;
+    const updates = {
+        [`rounds/${game.currentRound}/status`]: 'completed',
+        [`rounds/${game.currentRound}/winner`]: winnerId,
+        [`rounds/${game.currentRound}/isTie`]: false,
+        [`rounds/${game.currentRound}/duration`]: roundDuration,
+        gameStatus: 'results'
+    };
 
-            // Aggiorna lo stato del round
-            gameRef.child(`rounds/${game.currentRound}`).update({
-                status: 'completed',
-                winner: winnerId,
-                isTie: false,
-                duration: roundDuration // Salva la durata del round
-            });
+    const currentTokens = game.players[winnerId].tokens || 0;
+    updates[`players/${winnerId}/tokens`] = currentTokens + 1;
 
-            // Aggiorna il contatore di gettoni del vincitore
-            const currentTokens = game.players[winnerId].tokens || 0;
-            gameRef.child(`players/${winnerId}/tokens`).set(currentTokens + 1);
+    gameRef.update(updates).then(() => {
+        console.log("Round completato e stato aggiornato a 'results'");
+    }).catch(error => {
+        console.error("Errore nell'aggiornamento dello stato del round:", error);
+    });
+}
 
-            // Cambia lo stato del gioco
-            gameRef.update({
-                gameStatus: 'results'
-            });
+// --- Controllo connessione robusto ---
+const connectedRef = database.ref(".info/connected");
+connectedRef.on("value", (snap) => {
+    const isConnected = snap.val() === true;
+    console.log("Stato connessione:", isConnected ? "Connesso" : "Disconnesso");
+
+    let connectionStatus = document.getElementById('connection-status');
+    if (!connectionStatus) {
+        connectionStatus = document.createElement('div');
+        connectionStatus.id = 'connection-status';
+        connectionStatus.style.position = 'fixed';
+        connectionStatus.style.bottom = '10px';
+        connectionStatus.style.right = '10px';
+        connectionStatus.style.padding = '5px 10px';
+        connectionStatus.style.borderRadius = '5px';
+        connectionStatus.style.fontSize = '12px';
+        document.body.appendChild(connectionStatus);
+    }
+
+    if (isConnected) {
+        connectionStatus.textContent = 'Connesso';
+        connectionStatus.style.backgroundColor = '#4CAF50';
+        connectionStatus.style.color = 'white';
+        // Riabilita i pulsanti se erano stati disabilitati a causa di disconnessione
+        if (game && game.gameStatus === 'results') {
+            nextRoundBtn.disabled = false;
         }
     } else {
-        biddingStatusElement.style.display = 'none';
-
-        // Resetta il timer se non c'è nessuno che sta offrendo
-        if (bidTimerInterval) {
-            clearInterval(bidTimerInterval);
-            bidTimerInterval = null;
-            roundBidStartTime = 0;
-        }
+        connectionStatus.textContent = 'Disconnesso - Ricarica la pagina';
+        connectionStatus.style.backgroundColor = '#f44336';
+        connectionStatus.style.color = 'white';
+        nextRoundBtn.disabled = true;
+        startGameBtn.disabled = true;
     }
-} else {
-    biddingStatusElement.style.display = 'none';
-
-    // Resetta il timer se non siamo in fase di offerta
-    if (bidTimerInterval) {
-        clearInterval(bidTimerInterval);
-        bidTimerInterval = null;
-        roundBidStartTime = 0;
-    }
-}
-
-// Gestione del timer di round in base allo stato del gioco
-if (game.gameStatus === 'bidding') {
-    const currentRoundData = game.rounds && game.rounds[game.currentRound];
-    const anyoneBidding = currentRoundData && currentRoundData.bidding &&
-        Object.values(currentRoundData.bidding).some(status => status === true);
-
-    if (anyoneBidding && !isRoundTimerRunning) {
-        startRoundTimer();
-    } else if (!anyoneBidding && isRoundTimerRunning) {
-        stopRoundTimer();
-    }
-} else if (game.gameStatus === 'results') {
-    if (isRoundTimerRunning) {
-        stopRoundTimer();
-    }
-} else if (game.gameStatus === 'waiting' || game.gameStatus === 'running') {
-    resetRoundTimer();
-}
-        });
+});
+       
 
         // Pulsante per iniziare la partita
         document.getElementById('start-game-btn').addEventListener('click', function() {
@@ -611,29 +627,35 @@ if (game.gameStatus === 'bidding') {
 
         // Pulsante per il prossimo round
         document.getElementById('next-round-btn').addEventListener('click', function() {
+            const btn = this;
+            btn.disabled = true;
+            console.log("Pulsante Prossimo Round cliccato!");
+
             gameRef.once('value').then(snapshot => {
                 const game = snapshot.val();
+                console.log("Stato del gioco:", game.gameStatus);
+                console.log("Round corrente:", game.currentRound);
 
                 if (!game || (game.gameStatus !== 'running' && game.gameStatus !== 'results')) {
+                    console.log("Stato non valido per avanzare al prossimo round");
+                    btn.disabled = false;
                     return;
                 }
 
-                // Se siamo all'ultimo round, termina la partita
                 if (game.currentRound >= game.totalRounds) {
+                    console.log("Ultimo round completato, determinazione del vincitore");
                     determineWinner(game);
                     return;
                 }
 
-                // Altrimenti, prepara il prossimo round
                 const nextRound = game.currentRound + 1;
+                console.log("Avanzamento al round:", nextRound);
 
-                // Prepara l'oggetto aggiornamento
                 const updates = {
                     currentRound: nextRound,
                     gameStatus: 'bidding'
                 };
 
-                // Crea la struttura per il nuovo round
                 updates[`rounds/${nextRound}`] = {
                     status: 'bidding',
                     bids: {},
@@ -644,7 +666,6 @@ if (game.gameStatus === 'bidding') {
                     isTie: false
                 };
 
-                // Resetta lo stato "isReady" di tutti i giocatori che non sono eliminati
                 if (game.players) {
                     Object.keys(game.players).forEach(playerId => {
                         if (!game.players[playerId].isEliminated) {
@@ -653,10 +674,20 @@ if (game.gameStatus === 'bidding') {
                     });
                 }
 
-                // Aggiorna il database
-                gameRef.update(updates);
+                gameRef.update(updates).then(() => {
+                    console.log("Database aggiornato con successo per il round", nextRound);
+                    resetRoundTimer();
+                    setTimeout(() => {
+                        btn.disabled = false;
+                    }, 1000);
+                }).catch(error => {
+                    console.error("Errore nell'aggiornamento del database:", error);
+                    btn.disabled = false;
+                });
+            }).catch(error => {
+                console.error("Errore nella lettura del database:", error);
+                btn.disabled = false;
             });
-            resetRoundTimer();
         });
 
         // Funzione per determinare il vincitore della partita

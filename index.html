@@ -36,6 +36,24 @@
         .hidden {
             display: none;
         }
+        .info-box {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .info-box h3 {
+            margin-top: 0;
+        }
+        .info-title {
+            font-weight: bold;
+            color: #333;
+        }
+        .info-text {
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -64,6 +82,14 @@
         <p><button class="button" id="back-from-join">Indietro</button></p>
     </div>
 
+    <div class="info-box">
+        <h3>Regole del Gioco</h3>
+        <p class="info-text">Ogni giocatore ha 10 minuti totali. Si giocano 19 round di offerte.</p>
+        <p class="info-text"><span class="info-title">Come si gioca:</span> In ogni round, tieni premuto il pulsante per 5 secondi per confermare di voler partecipare. Se rilasci prima, non parteciperai al round. Dopo i 5 secondi, inizia il tempo dell'offerta effettiva.</p>
+        <p class="info-text"><span class="info-title">Chi vince:</span> L'ultimo giocatore che rilascia il pulsante vince un gettone premio. Alla fine dei 19 round, vince chi ha più gettoni.</p>
+        <p class="info-text"><span class="info-title">Eliminazione:</span> Chi esaurisce il proprio tempo viene eliminato. In caso di parità, vince chi ha più tempo residuo.</p>
+    </div>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -84,6 +110,16 @@
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
+
+        // All'inizio della sezione <script> (dopo const database = firebase.database();)
+const connectedRef = database.ref(".info/connected");
+connectedRef.on("value", (snap) => {
+    if (snap.val() === true) {
+        console.log("Connesso al database Firebase");
+    } else {
+        console.log("Disconnesso dal database Firebase");
+    }
+});
 
         // Funzioni di navigazione tra schermate
         document.getElementById('create-game').addEventListener('click', function() {
@@ -116,13 +152,13 @@
 
             // Genera un ID partita casuale di 6 caratteri
             const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
-            
-            // Crea la struttura iniziale della partita
+
+            // Crea la struttura iniziale della partita con i nuovi campi
             const gameRef = database.ref('games/' + gameId);
-            
+
             gameRef.set({
                 gameId: gameId,
-                gameStatus: 'waiting', // waiting, running, completed
+                gameStatus: 'waiting', // waiting, bidding, results, completed
                 currentRound: 0,
                 totalRounds: 19,
                 createdBy: creatorName,
@@ -132,7 +168,7 @@
                 // Salva l'ID nella memoria del browser
                 localStorage.setItem('gameId', gameId);
                 localStorage.setItem('playerType', 'host');
-                
+
                 // Reindirizza al tabellone
                 window.location.href = 'tabellone.html';
             }).catch(error => {
@@ -145,7 +181,7 @@
         document.getElementById('join-as-player').addEventListener('click', function() {
             const gameId = document.getElementById('game-id').value.trim().toUpperCase();
             const playerName = document.getElementById('player-name').value.trim();
-            
+
             if (!gameId || !playerName) {
                 alert('Inserisci sia il codice partita che il tuo nome');
                 return;
@@ -153,7 +189,7 @@
 
             // Verifica se la partita esiste
             const gameRef = database.ref('games/' + gameId);
-            
+
             gameRef.once('value').then(snapshot => {
                 if (!snapshot.exists()) {
                     alert('Partita non trovata. Verifica il codice.');
@@ -166,24 +202,30 @@
                     return;
                 }
 
+                // Controlla se c'è un limite al numero di giocatori
+                if (game.expectedPlayers && Object.keys(game.players || {}).length >= game.expectedPlayers) {
+                    alert('Questa partita ha già raggiunto il numero massimo di giocatori.');
+                    return;
+                }
+
                 // Genera un ID giocatore
                 const playerId = 'player_' + Date.now();
-                
-                // Aggiungi il giocatore alla partita
+
+                // Aggiungi il giocatore alla partita con i campi aggiornati
                 gameRef.child('players/' + playerId).set({
                     id: playerId,
                     name: playerName,
                     remainingTime: 600, // 10 minuti in secondi
                     tokens: 0,
                     isEliminated: false,
-                    isReady: true
+                    isReady: false // Cambiato da true a false per la nuova meccanica di gioco
                 }).then(() => {
                     // Salva le informazioni nella memoria del browser
                     localStorage.setItem('gameId', gameId);
                     localStorage.setItem('playerId', playerId);
                     localStorage.setItem('playerName', playerName);
                     localStorage.setItem('playerType', 'player');
-                    
+
                     // Reindirizza all'interfaccia giocatore
                     window.location.href = 'giocatore.html';
                 }).catch(error => {
