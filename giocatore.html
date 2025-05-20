@@ -190,6 +190,17 @@ let isConfirming = false;
 let isConfirmed = false;
 let actualBidStartTime = 0;
 
+        // --- 3. Verifica della connessione Firebase (all'inizio della sezione <script>) ---
+const connectedRef = database.ref(".info/connected");
+connectedRef.on("value", (snap) => {
+    if (snap.val() === true) {
+        console.log("Connesso al database Firebase");
+    } else {
+        console.log("Disconnesso dal database Firebase");
+        alert("Connessione al server persa. Ricaricare la pagina.");
+    }
+});
+
         // Ascolta le modifiche alla partita
         gameRef.on('value', snapshot => {
             const game = snapshot.val();
@@ -494,6 +505,18 @@ function determineRoundWinner(game) {
     gameRef.update(updates);
 }
 
+        // --- C. Ascoltatore specifico per i cambiamenti di stato del gioco ---
+const gameStatusRef = database.ref('games/' + gameId + '/gameStatus');
+gameStatusRef.on('value', snapshot => {
+    const status = snapshot.val();
+    if (status === 'bidding') {
+        gameRef.once('value').then(gameSnapshot => {
+            const gameData = gameSnapshot.val();
+            updateGameStatus(gameData);
+        });
+    }
+});
+
         // Aggiorna lo stato del gioco nella UI
         function updateGameStatus(game) {
             const statusElement = document.getElementById('game-status');
@@ -514,14 +537,52 @@ function determineRoundWinner(game) {
                     break;
                     
                 case 'bidding':
-                    // Se siamo nel round corrente e il giocatore non è pronto e non è eliminato
-                    if (playerData && !playerData.isReady && !playerData.isEliminated) {
-                        statusElement.textContent = 'È il tuo turno di offrire!';
-                        waitMessageElement.textContent = 'Tieni premuto il pulsante per fare la tua offerta...';
-                        bidButton.disabled = false;
-                    } else {
+                    // Controllare se il giocatore ha già partecipato a questo round
+                    if (game.rounds &&
+                        game.rounds[game.currentRound] &&
+                        game.rounds[game.currentRound].participating &&
+                        game.rounds[game.currentRound].participating[playerId] === false) {
+                        statusElement.textContent = 'Round in corso...';
+                        waitMessageElement.textContent = 'Hai scelto di non partecipare a questo round. In attesa del prossimo...';
+                        bidButton.disabled = true;
+                    }
+                    // Controllare se il giocatore è già pronto (ha già fatto un'offerta)
+                    else if (playerData && playerData.isReady) {
                         statusElement.textContent = 'Round in corso...';
                         waitMessageElement.textContent = 'In attesa degli altri giocatori...';
+                        bidButton.disabled = true;
+                    }
+                    // Controllare se il giocatore sta già offrendo
+                    else if (game.rounds &&
+                             game.rounds[game.currentRound] &&
+                             game.rounds[game.currentRound].bidding &&
+                             game.rounds[game.currentRound].bidding[playerId]) {
+                        statusElement.textContent = 'Stai offrendo!';
+                        waitMessageElement.style.display = 'none';
+                        bidButton.disabled = false;
+                    }
+                    // Altrimenti il giocatore può partecipare
+                    else if (!playerData.isEliminated) {
+                        statusElement.textContent = 'È il tuo turno di partecipare!';
+                        waitMessageElement.textContent = 'Tieni premuto il pulsante per 5 secondi per partecipare...';
+                        bidButton.textContent = 'TIENI PREMUTO PER PARTECIPARE';
+                        bidButton.disabled = false;
+
+                        // Resetta gli stati di conferma e offerta
+                        isConfirming = false;
+                        isConfirmed = false;
+                        if (confirmationTimer) clearInterval(confirmationTimer);
+                        if (bidTimer) clearInterval(bidTimer);
+
+                        // Rimuovi eventuali classi dal pulsante
+                        bidButton.classList.remove('confirming', 'ready');
+
+                        // Nascondi elementi di conteggio
+                        document.getElementById('confirmation-countdown').style.display = 'none';
+                        biddingTimer.style.display = 'none';
+                    } else {
+                        statusElement.textContent = 'Round in corso...';
+                        waitMessageElement.textContent = 'Sei stato eliminato dalla partita.';
                         bidButton.disabled = true;
                     }
                     break;

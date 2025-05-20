@@ -486,22 +486,25 @@ if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRoun
             gameRef.once('value').then(snapshot => {
                 const game = snapshot.val();
 
-                // Se la partita è in attesa, avviala
+                // Se la partita è in attesa, avviala direttamente in modalità bidding
                 if (game && game.gameStatus === 'waiting') {
                     if (Object.keys(game.players || {}).length < 2) {
                         alert('Sono necessari almeno 2 giocatori per iniziare la partita.');
                         return;
                     }
 
-                    // Aggiorna lo stato del gioco per avviarlo
+                    // Aggiorna lo stato del gioco per avviarlo direttamente in modalità bidding
                     gameRef.update({
-                        gameStatus: 'running',
+                        gameStatus: 'bidding', // Cambiato da 'running' a 'bidding'
                         currentRound: 1,
                         rounds: {
                             1: {
-                                status: 'waiting',
+                                status: 'bidding', // Cambiato da 'waiting' a 'bidding'
                                 bids: {},
+                                bidding: {},
+                                participating: {},
                                 winner: null,
+                                lastBidder: null,
                                 isTie: false
                             }
                         }
