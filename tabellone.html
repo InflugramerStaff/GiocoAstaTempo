@@ -98,6 +98,19 @@
 
     <div class="code-display" id="game-id-display">Codice: ...</div>
 
+    <!-- Configurazione Partita -->
+    <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f8f8; border-radius: 8px;">
+        <h3>Configurazione Partita</h3>
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+            <label for="expected-players" style="margin-right: 10px;">Numero di giocatori attesi:</label>
+            <input type="number" id="expected-players" min="2" max="10" value="2" style="width: 60px; padding: 5px;">
+            <button class="button" id="set-players-btn" style="margin-left: 10px;">Imposta</button>
+        </div>
+        <div id="players-status">
+            Giocatori connessi: <span id="connected-players">0</span>/<span id="expected-players-count">2</span>
+        </div>
+    </div>
+
     <div class="game-info">
         <div>Round: <span id="current-round">0</span>/19</div>
         <div>Stato: <span id="game-status">In attesa di giocatori</span></div>
@@ -139,6 +152,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
     <script>
+        let expectedPlayers = 2;
+let isPlayerCountSet = false;
+
         // Inserisci qui la configurazione di Firebase che hai copiato
         const firebaseConfig = {
             // INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE
@@ -314,20 +330,40 @@
             // Gestisci lo stato dei pulsanti
             const startGameBtn = document.getElementById('start-game-btn');
             const nextRoundBtn = document.getElementById('next-round-btn');
+            const connectedPlayersElement = document.getElementById('connected-players');
 
-            if (game.gameStatus === 'waiting') {
-                startGameBtn.disabled = Object.keys(game.players || {}).length < 2;
-                nextRoundBtn.disabled = true;
-            } else if (game.gameStatus === 'running' || game.gameStatus === 'results') {
-                startGameBtn.disabled = true;
-                nextRoundBtn.disabled = false;
-            } else if (game.gameStatus === 'bidding') {
-                startGameBtn.disabled = true;
-                nextRoundBtn.disabled = true;
-            } else if (game.gameStatus === 'completed') {
-                startGameBtn.disabled = true;
-                nextRoundBtn.disabled = true;
-            }
+if (game.gameStatus === 'waiting') {
+    const playerCount = Object.keys(game.players || {}).length;
+    connectedPlayersElement.textContent = playerCount;
+
+    // Abilita il pulsante di inizio solo se tutti i giocatori attesi sono connessi
+    startGameBtn.disabled = !isPlayerCountSet || playerCount < expectedPlayers;
+    nextRoundBtn.disabled = true;
+
+    // Se il numero di giocatori attesi è già impostato nel database, aggiornalo nell'interfaccia
+    if (game.expectedPlayers && !isPlayerCountSet) {
+        expectedPlayers = game.expectedPlayers;
+        document.getElementById('expected-players').value = expectedPlayers;
+        document.getElementById('expected-players-count').textContent = expectedPlayers;
+        document.getElementById('expected-players').disabled = true;
+        document.getElementById('set-players-btn').disabled = true;
+        isPlayerCountSet = true;
+    }
+} else if (game.gameStatus === 'running' || game.gameStatus === 'results') {
+    startGameBtn.disabled = true;
+    nextRoundBtn.disabled = false;
+} else if (game.gameStatus === 'bidding') {
+    startGameBtn.disabled = true;
+    nextRoundBtn.disabled = true;
+} else if (game.gameStatus === 'completed') {
+    startGameBtn.disabled = true;
+    nextRoundBtn.disabled = true;
+}
+
+            // Aggiorna il numero di giocatori connessi
+            const connectedPlayersCount = Object.keys(game.players || {}).length;
+            document.getElementById('connected-players').textContent = connectedPlayersCount;
+            document.getElementById('expected-players-count').textContent = game.expectedPlayers || 2;
         });
 
         // Pulsante per iniziare la partita
@@ -451,6 +487,32 @@
             
             alert(`Il vincitore è ${game.players[finalWinnerId].name} con ${maxTokens} gettoni e più tempo residuo!`);
         }
+
+        // Imposta il numero di giocatori attesi
+        document.getElementById('set-players-btn').addEventListener('click', function() {
+            const playerCountInput = document.getElementById('expected-players');
+            const newCount = parseInt(playerCountInput.value, 10);
+
+            if (isNaN(newCount) || newCount < 2) {
+                alert('Il numero di giocatori deve essere almeno 2.');
+                return;
+            }
+
+            expectedPlayers = newCount;
+            document.getElementById('expected-players-count').textContent = expectedPlayers;
+
+            // Aggiorna il database con il numero di giocatori attesi
+            gameRef.update({
+                expectedPlayers: expectedPlayers
+            });
+
+            // Disabilita il campo e il pulsante dopo l'impostazione
+            playerCountInput.disabled = true;
+            document.getElementById('set-players-btn').disabled = true;
+            isPlayerCountSet = true;
+
+            alert(`Numero di giocatori impostato a ${expectedPlayers}. Condividi il codice partita per far unire i giocatori.`);
+        });
     </script>
 </body>
 </html>
