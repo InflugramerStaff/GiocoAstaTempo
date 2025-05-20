@@ -120,7 +120,10 @@
         </div>
     </div>
 
-    <div class="code-display" id="game-id-display">Codice: ...</div>
+    <!-- Sostituisci la vecchia code-display con questa versione più evidente -->
+<div class="code-display" id="game-id-display" style="font-size: 32px; color: #007bff; background-color: #f0f7ff; border: 2px solid #007bff; cursor: pointer;">
+    Codice: ...
+</div>
 
     <!-- Configurazione Partita -->
     <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f8f8; border-radius: 8px;">
@@ -265,165 +268,181 @@ const firebaseConfig = {
             window.location.href = 'index.html';
         }
 
-        const gameId = localStorage.getItem('gameId');
-        if (!gameId) {
-            alert('Nessuna partita trovata. Torna alla home.');
-            window.location.href = 'index.html';
-        }
+        // Funzione per aggiornare il codice partita
+function updateGameCode() {
+    const gameId = localStorage.getItem('gameId');
+    if (gameId) {
+        console.log("Aggiornamento codice partita:", gameId);
+        const codeDisplay = document.getElementById('game-id-display');
+        codeDisplay.textContent = 'Codice: ' + gameId;
+        codeDisplay.setAttribute('data-code', gameId);
+    }
+}
 
-        // Riferimento alla partita nel database
-        const gameRef = database.ref('games/' + gameId);
-        
-        // Mostra il codice partita
-        document.getElementById('game-id-display').textContent = 'Codice: ' + gameId;
+// Recupera l'ID partita e mostra subito il codice
+const gameId = localStorage.getItem('gameId');
+if (!gameId) {
+    alert('Nessuna partita trovata. Torna alla home.');
+    window.location.href = 'index.html';
+}
+// Log di debug
+console.log("ID partita recuperato:", gameId);
 
-        // Ascolta le modifiche alla partita
-        gameRef.on('value', snapshot => {
-            const game = snapshot.val();
-            if (!game) {
-                alert('Partita non trovata.');
-                window.location.href = 'index.html';
-                return;
+// Mostra il codice partita subito
+updateGameCode();
+
+// Riferimento alla partita nel database
+const gameRef = database.ref('games/' + gameId);
+
+// Aggiorna il codice partita anche quando cambiano i dati della partita
+gameRef.on('value', snapshot => {
+    const game = snapshot.val();
+    if (!game) {
+        alert('Partita non trovata.');
+        window.location.href = 'index.html';
+        return;
+    }
+    // Aggiorna il codice partita qui
+    updateGameCode();
+
+    // Aggiorna le informazioni di gioco
+    document.getElementById('current-round').textContent = game.currentRound;
+    
+    // Aggiorna lo stato del gioco
+    let statusText = 'Sconosciuto';
+    switch(game.gameStatus) {
+        case 'waiting':
+            statusText = 'In attesa di giocatori';
+            break;
+        case 'running':
+            statusText = 'In corso';
+            break;
+        case 'bidding':
+            statusText = 'Round in corso - Offerte';
+            break;
+        case 'results':
+            statusText = 'Visualizzazione risultati';
+            break;
+        case 'completed':
+            statusText = 'Partita terminata';
+            break;
+    }
+    document.getElementById('game-status').textContent = statusText;
+
+    // Aggiorna l'elenco dei giocatori
+    const playersList = document.getElementById('players-list');
+    playersList.innerHTML = '';
+
+    if (game.players) {
+        Object.values(game.players).forEach(player => {
+            const row = document.createElement('tr');
+            if (player.isEliminated) {
+                row.classList.add('eliminated');
             }
 
-            // Aggiorna le informazioni di gioco
-            document.getElementById('current-round').textContent = game.currentRound;
+            const nameCell = document.createElement('td');
+            nameCell.textContent = player.name;
             
-            // Aggiorna lo stato del gioco
-            let statusText = 'Sconosciuto';
-            switch(game.gameStatus) {
-                case 'waiting':
-                    statusText = 'In attesa di giocatori';
-                    break;
-                case 'running':
-                    statusText = 'In corso';
-                    break;
-                case 'bidding':
-                    statusText = 'Round in corso - Offerte';
-                    break;
-                case 'results':
-                    statusText = 'Visualizzazione risultati';
-                    break;
-                case 'completed':
-                    statusText = 'Partita terminata';
-                    break;
+            const timeCell = document.createElement('td');
+            const minutes = Math.floor(player.remainingTime / 60);
+            const seconds = player.remainingTime % 60;
+            timeCell.textContent = player.isEliminated ? 'ELIMINATO' : 
+                `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
+            
+            const tokensCell = document.createElement('td');
+            tokensCell.textContent = player.tokens;
+            
+            const statusCell = document.createElement('td');
+            statusCell.textContent = player.isEliminated ? 'Eliminato' : 
+                (player.isReady ? 'Pronto' : 'In attesa');
+
+            row.appendChild(nameCell);
+            row.appendChild(timeCell);
+            row.appendChild(tokensCell);
+            row.appendChild(statusCell);
+            
+            playersList.appendChild(row);
+        });
+    }
+
+    // Aggiorna i risultati del round corrente o precedente
+    if (game.rounds && game.currentRound > 0) {
+        const currentRoundData = game.rounds[game.currentRound];
+        
+        if (currentRoundData && currentRoundData.status === 'completed') {
+            document.getElementById('result-round-number').textContent = game.currentRound;
+            
+            // Visualizza la durata del round
+            if (currentRoundData.duration) {
+                document.getElementById('round-duration').textContent = formatTime(currentRoundData.duration);
             }
-            document.getElementById('game-status').textContent = statusText;
 
-            // Aggiorna l'elenco dei giocatori
-            const playersList = document.getElementById('players-list');
-            playersList.innerHTML = '';
+            const resultsList = document.getElementById('round-results-list');
+            resultsList.innerHTML = '';
 
-            if (game.players) {
-                Object.values(game.players).forEach(player => {
+            if (game.players && currentRoundData.bids) {
+                // Converti i bid in una struttura più facilmente ordinabile
+                const bidsArray = [];
+                
+                Object.keys(currentRoundData.bids).forEach(playerId => {
+                    if (game.players[playerId]) {
+                        bidsArray.push({
+                            playerId: playerId,
+                            playerName: game.players[playerId].name,
+                            bidTime: currentRoundData.bids[playerId],
+                            isWinner: currentRoundData.winner === playerId
+                        });
+                    }
+                });
+
+                // Ordina per tempo offerto (discendente)
+                bidsArray.sort((a, b) => b.bidTime - a.bidTime);
+
+                // Crea le righe della tabella dei risultati
+                bidsArray.forEach(bid => {
                     const row = document.createElement('tr');
-                    if (player.isEliminated) {
-                        row.classList.add('eliminated');
+                    if (bid.isWinner) {
+                        row.classList.add('winner');
                     }
 
                     const nameCell = document.createElement('td');
-                    nameCell.textContent = player.name;
+                    nameCell.textContent = bid.playerName;
                     
-                    const timeCell = document.createElement('td');
-                    const minutes = Math.floor(player.remainingTime / 60);
-                    const seconds = player.remainingTime % 60;
-                    timeCell.textContent = player.isEliminated ? 'ELIMINATO' : 
-                        `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
+                    const bidCell = document.createElement('td');
+                    const seconds = Math.floor(bid.bidTime);
+                    const milliseconds = Math.floor((bid.bidTime - seconds) * 1000);
+                    bidCell.textContent = `${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
                     
-                    const tokensCell = document.createElement('td');
-                    tokensCell.textContent = player.tokens;
+                    const resultCell = document.createElement('td');
+                    resultCell.textContent = bid.isWinner ? 'VINCITORE' : '';
                     
-                    const statusCell = document.createElement('td');
-                    statusCell.textContent = player.isEliminated ? 'Eliminato' : 
-                        (player.isReady ? 'Pronto' : 'In attesa');
-
                     row.appendChild(nameCell);
-                    row.appendChild(timeCell);
-                    row.appendChild(tokensCell);
-                    row.appendChild(statusCell);
+                    row.appendChild(bidCell);
+                    row.appendChild(resultCell);
                     
-                    playersList.appendChild(row);
+                    resultsList.appendChild(row);
                 });
-            }
 
-            // Aggiorna i risultati del round corrente o precedente
-            if (game.rounds && game.currentRound > 0) {
-                const currentRoundData = game.rounds[game.currentRound];
-                
-                if (currentRoundData && currentRoundData.status === 'completed') {
-                    document.getElementById('result-round-number').textContent = game.currentRound;
-                    
-                    // Visualizza la durata del round
-                    if (currentRoundData.duration) {
-                        document.getElementById('round-duration').textContent = formatTime(currentRoundData.duration);
-                    }
-
-                    const resultsList = document.getElementById('round-results-list');
-                    resultsList.innerHTML = '';
-
-                    if (game.players && currentRoundData.bids) {
-                        // Converti i bid in una struttura più facilmente ordinabile
-                        const bidsArray = [];
-                        
-                        Object.keys(currentRoundData.bids).forEach(playerId => {
-                            if (game.players[playerId]) {
-                                bidsArray.push({
-                                    playerId: playerId,
-                                    playerName: game.players[playerId].name,
-                                    bidTime: currentRoundData.bids[playerId],
-                                    isWinner: currentRoundData.winner === playerId
-                                });
-                            }
-                        });
-
-                        // Ordina per tempo offerto (discendente)
-                        bidsArray.sort((a, b) => b.bidTime - a.bidTime);
-
-                        // Crea le righe della tabella dei risultati
-                        bidsArray.forEach(bid => {
-                            const row = document.createElement('tr');
-                            if (bid.isWinner) {
-                                row.classList.add('winner');
-                            }
-
-                            const nameCell = document.createElement('td');
-                            nameCell.textContent = bid.playerName;
-                            
-                            const bidCell = document.createElement('td');
-                            const seconds = Math.floor(bid.bidTime);
-                            const milliseconds = Math.floor((bid.bidTime - seconds) * 1000);
-                            bidCell.textContent = `${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
-                            
-                            const resultCell = document.createElement('td');
-                            resultCell.textContent = bid.isWinner ? 'VINCITORE' : '';
-                            
-                            row.appendChild(nameCell);
-                            row.appendChild(bidCell);
-                            row.appendChild(resultCell);
-                            
-                            resultsList.appendChild(row);
-                        });
-
-                        // Se c'è stato un pareggio
-                        if (currentRoundData.isTie) {
-                            const tieRow = document.createElement('tr');
-                            const tieCell = document.createElement('td');
-                            tieCell.colSpan = 3;
-                            tieCell.textContent = 'PAREGGIO - Nessun gettone assegnato';
-                            tieCell.style.textAlign = 'center';
-                            tieCell.style.fontWeight = 'bold';
-                            tieCell.style.color = 'red';
-                            tieRow.appendChild(tieCell);
-                            resultsList.appendChild(tieRow);
-                        }
-                    }
+                // Se c'è stato un pareggio
+                if (currentRoundData.isTie) {
+                    const tieRow = document.createElement('tr');
+                    const tieCell = document.createElement('td');
+                    tieCell.colSpan = 3;
+                    tieCell.textContent = 'PAREGGIO - Nessun gettone assegnato';
+                    tieCell.style.textAlign = 'center';
+                    tieCell.style.fontWeight = 'bold';
+                    tieCell.style.color = 'red';
+                    tieRow.appendChild(tieCell);
+                    resultsList.appendChild(tieRow);
                 }
             }
+        }
+    }
 
-            // Gestisci lo stato dei pulsanti e l'aspetto
-            const startGameBtn = document.getElementById('start-game-btn');
-            const nextRoundBtn = document.getElementById('next-round-btn');
-            const connectedPlayersElement = document.getElementById('connected-players');
+    // Gestisci lo stato dei pulsanti e l'aspetto
+    const startGameBtn = document.getElementById('start-game-btn');
+    const nextRoundBtn = document.getElementById('next-round-btn');
+    const connectedPlayersElement = document.getElementById('connected-players');
 
 console.log("Stato attuale del gioco:", game.gameStatus);
 
@@ -761,6 +780,27 @@ connectedRef.on("value", (snap) => {
 
             alert(`Numero di giocatori impostato a ${expectedPlayers}. Condividi il codice partita per far unire i giocatori.`);
         });
+
+// Alla fine della sezione <script>, aggiungi la funzionalità per copiare il codice con un click
+document.getElementById('game-id-display').addEventListener('click', function() {
+    const gameId = this.getAttribute('data-code');
+    if (gameId) {
+        // Crea un input temporaneo per copiare il testo
+        const tempInput = document.createElement('input');
+        tempInput.value = gameId;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+
+        // Feedback visivo
+        const originalText = this.textContent;
+        this.textContent = 'Codice copiato!';
+        setTimeout(() => {
+            this.textContent = originalText;
+        }, 1500);
+    }
+});
     </script>
 </body>
 </html>

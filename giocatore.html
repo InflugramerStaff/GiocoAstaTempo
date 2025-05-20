@@ -63,7 +63,7 @@
             background-color: #4CAF50;
         }
         .bid-button.confirming {
-            background-color: #FFA500;
+            background-color: #FF0000; /* Rosso durante la conferma invece di arancione */
         }
         .wait-message {
             font-size: 20px;
@@ -257,9 +257,10 @@ connectedRef.on("value", (snap) => {
                 isConfirming = true;
                 confirmationCountdown = confirmationTime;
 
-                // Cambia l'aspetto del pulsante durante la conferma
+                // Cambia l'aspetto del pulsante durante la conferma - ROSSO
                 bidButton.classList.add('confirming');
                 bidButton.textContent = 'TIENI PREMUTO PER CONFERMARE...';
+                console.log("Fase conferma iniziata - pulsante ROSSO");
 
                 // Mostra il countdown
                 const countdownElement = document.getElementById('confirmation-countdown');
@@ -280,10 +281,11 @@ connectedRef.on("value", (snap) => {
                         // Nascondi il countdown
                         countdownElement.style.display = 'none';
 
-                        // Cambia l'aspetto del pulsante per l'offerta
+                        // Cambia l'aspetto del pulsante per l'offerta - VERDE
                         bidButton.classList.remove('confirming');
                         bidButton.classList.add('ready');
                         bidButton.textContent = 'STAI OFFRENDO...';
+                        console.log("Fase offerta iniziata - pulsante VERDE");
 
                         // Notifica al database che il giocatore sta offrendo
                         gameRef.child(`rounds/${gameData.currentRound}/bidding/${playerId}`).set(true);
@@ -316,6 +318,7 @@ connectedRef.on("value", (snap) => {
                 // Se il giocatore rilascia durante la fase di conferma, annulla tutto
                 clearInterval(confirmationTimer);
                 isConfirming = false;
+                console.log("Fase conferma annullata - rilasciato prima dei 5 secondi");
 
                 // Ripristina l'aspetto del pulsante
                 bidButton.classList.remove('confirming');
@@ -335,6 +338,7 @@ connectedRef.on("value", (snap) => {
                 bidButton.disabled = true;
             } else if (isConfirmed) {
                 // Se ha completato la conferma ed è in fase di offerta, procedi con stopBidding
+                console.log("Fase offerta terminata - rilasciato dopo i 5 secondi");
                 stopBidding();
             }
         });
@@ -568,14 +572,14 @@ gameStatusRef.on('value', snapshot => {
                         bidButton.textContent = 'TIENI PREMUTO PER PARTECIPARE';
                         bidButton.disabled = false;
 
+                        // Assicuriamoci che il pulsante abbia l'aspetto corretto all'inizio
+                        bidButton.className = 'bid-button'; // Rimuove tutte le classi e lascia solo quella di base
+
                         // Resetta gli stati di conferma e offerta
                         isConfirming = false;
                         isConfirmed = false;
                         if (confirmationTimer) clearInterval(confirmationTimer);
                         if (bidTimer) clearInterval(bidTimer);
-
-                        // Rimuovi eventuali classi dal pulsante
-                        bidButton.classList.remove('confirming', 'ready');
 
                         // Nascondi elementi di conteggio
                         document.getElementById('confirmation-countdown').style.display = 'none';
