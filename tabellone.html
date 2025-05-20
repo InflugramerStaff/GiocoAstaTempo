@@ -85,6 +85,22 @@
         th {
             background-color: #f2f2f2;
         }
+        .end-game-btn {
+            background-color: #f44336;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .end-game-btn:hover {
+            background-color: #d32f2f;
+        }
     </style>
 </head>
 <body>
@@ -327,7 +343,7 @@ let isPlayerCountSet = false;
                 }
             }
 
-            // Gestisci lo stato dei pulsanti
+            // Gestisci lo stato dei pulsanti e l'aspetto
             const startGameBtn = document.getElementById('start-game-btn');
             const nextRoundBtn = document.getElementById('next-round-btn');
             const connectedPlayersElement = document.getElementById('connected-players');
@@ -340,6 +356,10 @@ if (game.gameStatus === 'waiting') {
     startGameBtn.disabled = !isPlayerCountSet || playerCount < expectedPlayers;
     nextRoundBtn.disabled = true;
 
+    // Assicurati che il pulsante abbia l'aspetto corretto per "Inizia Partita"
+    startGameBtn.textContent = 'Inizia Partita';
+    startGameBtn.className = 'button';
+
     // Se il numero di giocatori attesi è già impostato nel database, aggiornalo nell'interfaccia
     if (game.expectedPlayers && !isPlayerCountSet) {
         expectedPlayers = game.expectedPlayers;
@@ -349,12 +369,13 @@ if (game.gameStatus === 'waiting') {
         document.getElementById('set-players-btn').disabled = true;
         isPlayerCountSet = true;
     }
-} else if (game.gameStatus === 'running' || game.gameStatus === 'results') {
-    startGameBtn.disabled = true;
-    nextRoundBtn.disabled = false;
-} else if (game.gameStatus === 'bidding') {
-    startGameBtn.disabled = true;
-    nextRoundBtn.disabled = true;
+} else if (game.gameStatus === 'running' || game.gameStatus === 'bidding' || game.gameStatus === 'results') {
+    // Cambia l'aspetto e la funzione del pulsante a "Concludi il gioco"
+    startGameBtn.textContent = 'Concludi il gioco';
+    startGameBtn.className = 'end-game-btn';
+    startGameBtn.disabled = false;
+
+    nextRoundBtn.disabled = game.gameStatus === 'bidding';
 } else if (game.gameStatus === 'completed') {
     startGameBtn.disabled = true;
     nextRoundBtn.disabled = true;
@@ -370,29 +391,35 @@ if (game.gameStatus === 'waiting') {
         document.getElementById('start-game-btn').addEventListener('click', function() {
             gameRef.once('value').then(snapshot => {
                 const game = snapshot.val();
-                
-                if (!game || game.gameStatus !== 'waiting') {
-                    return;
-                }
-                
-                if (Object.keys(game.players || {}).length < 2) {
-                    alert('Sono necessari almeno 2 giocatori per iniziare la partita.');
-                    return;
-                }
-                
-                // Aggiorna lo stato del gioco
-                gameRef.update({
-                    gameStatus: 'running',
-                    currentRound: 1,
-                    rounds: {
-                        1: {
-                            status: 'waiting',
-                            bids: {},
-                            winner: null,
-                            isTie: false
-                        }
+
+                // Se la partita è in attesa, avviala
+                if (game && game.gameStatus === 'waiting') {
+                    if (Object.keys(game.players || {}).length < 2) {
+                        alert('Sono necessari almeno 2 giocatori per iniziare la partita.');
+                        return;
                     }
-                });
+
+                    // Aggiorna lo stato del gioco per avviarlo
+                    gameRef.update({
+                        gameStatus: 'running',
+                        currentRound: 1,
+                        rounds: {
+                            1: {
+                                status: 'waiting',
+                                bids: {},
+                                winner: null,
+                                isTie: false
+                            }
+                        }
+                    });
+                }
+                // Se la partita è in corso, chiedi conferma per terminarla
+                else if (game && (game.gameStatus === 'running' || game.gameStatus === 'bidding' || game.gameStatus === 'results')) {
+                    if (confirm('Sei sicuro di voler concludere il gioco? Questa azione determinerà il vincitore in base ai gettoni attuali e terminerà la partita.')) {
+                        // Chiama la funzione per determinare il vincitore
+                        determineWinner(game);
+                    }
+                }
             });
         });
 
