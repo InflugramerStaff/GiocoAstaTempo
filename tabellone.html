@@ -101,6 +101,14 @@
         .end-game-btn:hover {
             background-color: #d32f2f;
         }
+        @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(0, 123, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0); }
+}
+.timer-active {
+    animation: pulse 2s infinite;
+}
     </style>
 </head>
 <body>
@@ -132,6 +140,13 @@
         <div>Stato: <span id="game-status">In attesa di giocatori</span></div>
     </div>
 
+    <!-- Subito dopo <div class="game-info"> e prima della tabella dei giocatori -->
+<div class="round-timer-container" style="text-align: center; margin: 20px 0; padding: 15px; background-color: #f0f7ff; border-radius: 8px; border: 2px solid #007bff;">
+    <h2>Timer Round</h2>
+    <div id="round-timer" style="font-family: monospace; font-size: 48px; font-weight: bold; color: #007bff; margin: 10px 0;">00:00:000</div>
+    <div id="timer-status" style="font-size: 18px; margin-top: 5px;">In attesa dell'inizio del round</div>
+</div>
+
     <h2>Giocatori</h2>
     <table id="players-table">
         <thead>
@@ -158,6 +173,7 @@
 
     <div class="round-results">
         <h2>Risultati Round <span id="result-round-number">0</span></h2>
+        <p style="font-size: 16px;">Durata del round: <span id="round-duration">00:00:000</span></p>
         <table id="round-results-table">
             <thead>
                 <tr>
@@ -181,6 +197,51 @@
 let isPlayerCountSet = false;
 let bidTimerInterval = null;
 let roundBidStartTime = 0;
+
+// All'inizio della sezione <script>
+let roundTimerInterval = null;
+let roundStartTime = 0;
+let isRoundTimerRunning = false;
+
+// Funzione per formattare il tempo in MM:SS:MMM
+function formatTime(timeInMs) {
+    const minutes = Math.floor(timeInMs / 60000);
+    const seconds = Math.floor((timeInMs % 60000) / 1000);
+    const milliseconds = timeInMs % 1000;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
+}
+
+// Funzione per avviare il timer del round
+function startRoundTimer() {
+    if (roundTimerInterval) clearInterval(roundTimerInterval);
+    roundStartTime = Date.now();
+    isRoundTimerRunning = true;
+    document.getElementById('timer-status').textContent = 'Round in corso';
+    document.querySelector('.round-timer-container').classList.add('timer-active');
+    roundTimerInterval = setInterval(function() {
+        const elapsedTime = Date.now() - roundStartTime;
+        document.getElementById('round-timer').textContent = formatTime(elapsedTime);
+    }, 10);
+}
+
+// Funzione per fermare il timer del round
+function stopRoundTimer() {
+    if (roundTimerInterval) clearInterval(roundTimerInterval);
+    roundTimerInterval = null;
+    isRoundTimerRunning = false;
+    document.getElementById('timer-status').textContent = 'Round terminato';
+    document.querySelector('.round-timer-container').classList.remove('timer-active');
+}
+
+// Funzione per resettare il timer del round
+function resetRoundTimer() {
+    if (roundTimerInterval) clearInterval(roundTimerInterval);
+    roundTimerInterval = null;
+    isRoundTimerRunning = false;
+    document.getElementById('round-timer').textContent = '00:00:000';
+    document.getElementById('timer-status').textContent = 'In attesa dell\'inizio del round';
+    document.querySelector('.round-timer-container').classList.remove('timer-active');
+}
 
 // Inserisci qui la configurazione di Firebase che hai copiato
 const firebaseConfig = {
@@ -292,6 +353,11 @@ const firebaseConfig = {
                 if (currentRoundData && currentRoundData.status === 'completed') {
                     document.getElementById('result-round-number').textContent = game.currentRound;
                     
+                    // Visualizza la durata del round
+                    if (currentRoundData.duration) {
+                        document.getElementById('round-duration').textContent = formatTime(currentRoundData.duration);
+                    }
+
                     const resultsList = document.getElementById('round-results-list');
                     resultsList.innerHTML = '';
 
@@ -436,9 +502,12 @@ if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRoun
         biddingStatusElement.style.display = anyoneBidding ? 'block' : 'none';
 
         // Se nessuno sta offrendo ma c'è un ultimo offerente, concludi il round
-        if (!anyoneBidding && currentRoundData.lastBidder && roundBidStartTime > 0) {
+        if (!anyoneBidding && currentRoundData.lastBidder && roundStartTime > 0) {
             clearInterval(bidTimerInterval);
             bidTimerInterval = null;
+
+            // Calcola e salva la durata del round
+            const roundDuration = Date.now() - roundStartTime;
 
             // Assegna il gettone all'ultimo giocatore che ha rilasciato
             const winnerId = currentRoundData.lastBidder;
@@ -447,7 +516,8 @@ if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRoun
             gameRef.child(`rounds/${game.currentRound}`).update({
                 status: 'completed',
                 winner: winnerId,
-                isTie: false
+                isTie: false,
+                duration: roundDuration // Salva la durata del round
             });
 
             // Aggiorna il contatore di gettoni del vincitore
@@ -478,6 +548,25 @@ if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRoun
         bidTimerInterval = null;
         roundBidStartTime = 0;
     }
+}
+
+// Gestione del timer di round in base allo stato del gioco
+if (game.gameStatus === 'bidding') {
+    const currentRoundData = game.rounds && game.rounds[game.currentRound];
+    const anyoneBidding = currentRoundData && currentRoundData.bidding &&
+        Object.values(currentRoundData.bidding).some(status => status === true);
+
+    if (anyoneBidding && !isRoundTimerRunning) {
+        startRoundTimer();
+    } else if (!anyoneBidding && isRoundTimerRunning) {
+        stopRoundTimer();
+    }
+} else if (game.gameStatus === 'results') {
+    if (isRoundTimerRunning) {
+        stopRoundTimer();
+    }
+} else if (game.gameStatus === 'waiting' || game.gameStatus === 'running') {
+    resetRoundTimer();
 }
         });
 
@@ -567,6 +656,7 @@ if (game.gameStatus === 'bidding' && game.rounds && game.rounds[game.currentRoun
                 // Aggiorna il database
                 gameRef.update(updates);
             });
+            resetRoundTimer();
         });
 
         // Funzione per determinare il vincitore della partita
